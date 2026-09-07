@@ -4,25 +4,164 @@
 [![FastMCP](https://img.shields.io/badge/FastMCP-4.0+-brightgreen.svg)](https://github.com/jlowin/fastmcp)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Type Checked](https://img.shields.io/badge/mypy-strict-blue.svg)](https://mypy-lang.org/)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-**Paridhi** (*परिधि* — Sanskrit for *perimeter*, *circumference*, or *boundary*) is a [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server built with Python and [FastMCP](https://github.com/jlowin/fastmcp). It is designed to discover and enrich local points of interest (POIs) within circular spatial bounds.
+**Paridhi** (*परिधि* — Sanskrit for *perimeter*, *circumference*, or *boundary*) is a [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server built with Python and [FastMCP](https://github.com/jlowin/fastmcp). It enables AI agents to discover, filter, and enrich local points of interest (POIs) within circular spatial bounds using Google Maps Platform (Geocoding API & Places API New).
 
 ---
 
-## Architecture & CUPID Design
+## Key Highlights
 
-Paridhi is architected according to **CUPID** principles and Clean Architecture:
+- 🎯 **Circular Spatial Perimeters**: Enforces strict radial boundaries and haversine perimeter filtering.
+- 🛡️ **Predictable Clamping**: Automatically bounds search radii to `[100m, 50,000m]` to guard against accidental massive geofences.
+- 📐 **Hexagonal / Ports & Adapters Architecture**: Decouples domain logic from external providers (Google Maps, Mock, Mapbox, OSM).
+- 💰 **Billing Optimization**: Uses explicit Google Places API (New) Field Masks (`X-Goog-FieldMask`) to only retrieve required fields.
+- 🔗 **Deep-Linked Results**: Formats results as rich Markdown tables with deep links to Google Maps pins and verified ratings.
+- 🚦 **Fault Resilient**: Gracefully intercepts quotas, missing locations, and network errors into clean Markdown notices without leaking stack traces.
+- 🤖 **Agent-First Governance**: Strict automated synchronization contract between `AGENTS.md` and `README.md`.
 
-- **Composable:** Each component (spatial boundary models, configuration, transport runners, and future enrichment providers) can be plugged together or tested in isolation.
-- **Unix-like (Single Responsibility):**
-  - `core/config.py`: Environment configuration and runtime settings.
-  - `domain/models.py`: Immutable coordinates, circular boundaries, POI domain entities, and Pydantic validation schemas.
-  - `domain/exceptions.py`: Rich domain error hierarchy.
-  - `presentation/server.py`: FastMCP server instantiation and tool exposure.
-  - `main.py`: CLI entrypoint and runner dispatch.
-- **Predictable:** Strict validation with explicit bounds. Geographic coordinates are validated to WGS 84 limits, and spatial search radii are automatically clamped to valid bounds `[100m, 50,000m]`.
-- **Idiomatic:** Built with modern Python 3.11+ patterns, Pydantic v2 schemas, type safety, and FastMCP annotations.
-- **Domain-focused:** Ubiquitous spatial domain terminology: circular bounds, perimeters, coordinates, and points of interest.
+---
+
+## Architecture & Ports & Adapters Design
+
+Paridhi is designed around **Clean Architecture / Ports & Adapters (Hexagonal)**:
+
+```mermaid
+graph TD
+    subgraph Presentation Layer
+        CLI["CLI Entrypoint<br/>(main.py)"] --> Server["FastMCP Server<br/>(presentation/server.py)"]
+        Server --> Tool1["tool: ping"]
+        Server --> Tool2["tool: discover_pois"]
+    end
+
+    subgraph Domain Layer
+        Server --> RequestModel["DiscoverPOIsRequest<br/>(domain/models.py)"]
+        RequestModel --> Bounds["CircularBound & Coordinates<br/>(Clamping [100m, 50km])"]
+        Server --> Port["SpatialProvider Protocol<br/>(domain/ports.py)"]
+        Port --> PlaceModel["Place & Table Formatter<br/>(domain/models.py)"]
+    end
+
+    subgraph Infrastructure Layer
+        Factory["Provider Factory<br/>(infrastructure/factory.py)"] -.->|Instantiates| Port
+        GoogleAdapter["GoogleSpatialAdapter<br/>(infrastructure/google/adapter.py)"] ---|Implements| Port
+        MockAdapter["MockSpatialProvider<br/>(infrastructure/mock.py)"] ---|Implements| Port
+    end
+
+    subgraph Upstream APIs
+        GoogleAdapter --> GeocodingAPI["Google Geocoding API"]
+        GoogleAdapter --> PlacesAPI["Google Places API (New)"]
+    end
+```
+
+---
+
+## Use Case Sequence Diagrams
+
+All diagrams use standard Mermaid syntax and render natively on the GitHub Web UI.
+
+### 1. POI Discovery via Informal Location String
+This is the standard flow when an agent queries for places near a neighborhood or landmark name.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as "MCP Client (Agent / LLM)"
+    participant FastMCP as "FastMCP Presentation<br/>(server.py)"
+    participant Domain as "Domain Validator<br/>(models.py)"
+    participant Adapter as "GoogleSpatialAdapter<br/>(adapter.py)"
+    participant GeocodeAPI as "Google Geocoding API"
+    participant PlacesAPI as "Google Places API (New)"
+
+    Client->>FastMCP: discover_pois(query="vadapav shops", location="Bhatta, Paldi", radius=3000)
+    FastMCP->>Domain: Validate DiscoverPOIsRequest
+    Domain-->>FastMCP: Validated (clamped radius: 3000m)
+    
+    FastMCP->>Adapter: geocode("Bhatta, Paldi")
+    Adapter->>GeocodeAPI: GET /maps/api/geocode/json?address=Bhatta,+Paldi
+    GeocodeAPI-->>Adapter: 200 OK: {lat: 23.0125, lng: 72.5635}
+    Adapter-->>FastMCP: Coordinates(lat=23.0125, lng=72.5635)
+    
+    FastMCP->>Adapter: search_places(query="vadapav shops", center, radius=3000)
+    Adapter->>PlacesAPI: POST /v1/places:searchText (locationBias=circle, fieldMask)
+    PlacesAPI-->>Adapter: 200 OK: places[]
+    
+    Adapter->>Adapter: Apply Haversine perimeter distance filter
+    Adapter-->>FastMCP: list[Place]
+    
+    FastMCP->>Domain: format_places_table(places)
+    Domain-->>FastMCP: Markdown Table with [Pin] & [Rating] deep links
+    FastMCP-->>Client: Return formatted Markdown
+```
+
+---
+
+### 2. Direct Coordinate Search with Automatic Radius Clamping
+When coordinates are directly provided, geocoding is bypassed. If a requested radius falls outside allowable boundaries, Paridhi safely clamps it.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as "MCP Client"
+    participant FastMCP as "FastMCP Server"
+    participant Domain as "Domain Validation"
+    participant Adapter as "Spatial Adapter"
+    participant PlacesAPI as "Google Places API (New)"
+
+    Client->>FastMCP: discover_pois(latitude=19.0760, longitude=72.8777, radius=50)
+    FastMCP->>Domain: Validate DiscoverPOIsRequest
+    Domain->>Domain: clamp_radius(50.0) -> Clamped to min 100.0m
+    Domain-->>FastMCP: Validated (effective radius: 100m)
+    
+    Note over FastMCP: Coords provided; Geocoding step skipped
+    
+    FastMCP->>Adapter: search_places("points of interest", center, radius=100)
+    Adapter->>PlacesAPI: POST /v1/places:searchText
+    PlacesAPI-->>Adapter: 200 OK: places[]
+    Adapter-->>FastMCP: list[Place]
+    
+    FastMCP->>FastMCP: Append note: "Radius was adjusted from 50m to minimum 100m"
+    FastMCP-->>Client: Markdown table + Clamping notice
+```
+
+---
+
+### 3. Server Health Verification (`ping`)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as "MCP Client"
+    participant FastMCP as "FastMCP Server"
+    participant Settings as "Config Settings"
+
+    Client->>FastMCP: ping()
+    FastMCP->>Settings: Read server_name and server_version
+    Settings-->>FastMCP: Name="Paridhi", Version="0.1.0"
+    FastMCP-->>Client: HealthCheckResponse(status="healthy", timestamp=UTC)
+```
+
+---
+
+### 4. Upstream Error Handling & Graceful Recovery
+Paridhi shields the agent and host LLM from unhandled API exceptions and raw HTML error pages.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as "MCP Client"
+    participant FastMCP as "FastMCP Server"
+    participant Adapter as "GoogleSpatialAdapter"
+    participant RemoteAPI as "Google Maps API"
+
+    Client->>FastMCP: discover_pois(location="InvalidXYZNonExistentPlace")
+    FastMCP->>Adapter: geocode("InvalidXYZNonExistentPlace")
+    Adapter->>RemoteAPI: GET /maps/api/geocode/json
+    RemoteAPI-->>Adapter: 200 OK: {status: "ZERO_RESULTS"}
+    Adapter-->>FastMCP: raise GeocodingFailedError
+    
+    FastMCP->>FastMCP: Intercept GeocodingFailedError
+    FastMCP-->>Client: "⚠️ Geocoding Error: No matching location found. Please check spelling..."
+```
 
 ---
 
@@ -30,85 +169,108 @@ Paridhi is architected according to **CUPID** principles and Clean Architecture:
 
 ```text
 paridhi/
-├── .env.example                # Template for environment configuration
-├── .python-version             # Python version pinned by uv (3.12)
-├── pyproject.toml              # Build specifications, dependencies, and tool settings
-├── uv.lock                     # Deterministic dependency lockfile
-├── README.md                   # Project documentation
+├── .env.example                                # Environment configuration template
+├── .gitignore                                  # Git ignore rules
+├── .python-version                             # Python runtime pinned (3.12)
+├── pyproject.toml                              # Dependencies, packaging & tool configs
+├── uv.lock                                     # Deterministic dependency lockfile
+├── README.md                                   # User documentation (this file)
+├── AGENTS.md                                   # AI Agent operational contracts & SOPs
 ├── src/
 │   └── paridhi/
-│       ├── __init__.py         # Package root exposing version and entrypoints
-│       ├── py.typed            # PEP 561 typing marker
-│       ├── main.py             # CLI runner entrypoint
+│       ├── __init__.py                         # Public package exports
+│       ├── py.typed                            # PEP 561 typing marker
+│       ├── main.py                             # CLI runner (stdio, http, sse transports)
 │       ├── core/
 │       │   ├── __init__.py
-│       │   └── config.py       # pydantic-settings configuration
+│       │   └── config.py                       # pydantic-settings configuration
 │       ├── domain/
 │       │   ├── __init__.py
-│       │   ├── exceptions.py   # Domain & infrastructure error hierarchy
-│       │   └── models.py       # Pydantic schemas (POIs, bounds, clamping)
+│       │   ├── exceptions.py                   # Typed domain error hierarchy
+│       │   ├── models.py                       # Place, Coordinates, Bounds, Table formatter
+│       │   └── ports.py                        # SpatialProvider abstract interface
+│       ├── infrastructure/
+│       │   ├── __init__.py
+│       │   ├── factory.py                      # SpatialProvider dependency injection factory
+│       │   ├── mock.py                         # Mock provider with realistic offline fixtures
+│       │   └── google/
+│       │       ├── __init__.py
+│       │       ├── adapter.py                  # Google Geocoding & Places API (New) adapter
+│       │       └── client.py                   # Client aliases
 │       └── presentation/
 │           ├── __init__.py
-│           └── server.py       # FastMCP server & registered tool handlers
+│           └── server.py                       # FastMCP server & registered tool handlers
 └── tests/
     ├── __init__.py
-    ├── test_config.py          # Configuration tests
-    ├── test_domain_models.py   # Coordinate validation & radius clamping tests
-    └── test_server.py          # FastMCP tool execution tests (ping & discover_pois)
+    ├── test_config.py                          # Configuration parsing tests
+    ├── test_domain_models.py                   # Spatial validation, Place entity, and table formatting
+    ├── test_google_adapter.py                  # Unit tests for Google adapter (mocked HTTP)
+    ├── test_server.py                          # End-to-end FastMCP tool tests (discover_pois, ping)
+    └── test_docs_sync.py                       # Continuous documentation synchronization check
 ```
 
 ---
 
 ## Getting Started
 
-Paridhi uses **`uv`** exclusively for virtual environment management, builds, and dependency handling.
+Paridhi uses **`uv`** exclusively for dependency resolution, virtual environment management, and builds.
 
 ### Prerequisites
-
 - Python 3.11+
 - [`uv`](https://docs.astral.sh/uv/) (v0.11+)
+- Google Maps Platform API Key (with *Geocoding API* and *Places API (New)* enabled)
 
 ### Installation
-
-Clone the repository and sync the dependencies:
 
 ```bash
 git clone https://github.com/anshulpatel25/paridhi.git
 cd paridhi
-uv sync
-```
-
-To include development tools (`pytest`, `ruff`, `mypy`):
-
-```bash
 uv sync --all-groups
 ```
+
+### Configuration
+
+Copy the sample environment file:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` to configure your provider:
+
+```env
+# Geospatial Provider ('google' or 'mock')
+PARIDHI_SPATIAL_PROVIDER=google
+
+# Google Maps Platform API Key
+GOOGLE_MAPS_API_KEY=AIzaSyYourActualGoogleMapsApiKey
+
+# Transport & Network Options
+PARIDHI_TRANSPORT=http
+PARIDHI_HOST=0.0.0.0
+PARIDHI_PORT=8000
+```
+
+*(Tip: For offline development or unit testing without an API key, set `PARIDHI_SPATIAL_PROVIDER=mock`)*
 
 ---
 
 ## Running the Server
 
-### 1. Standard I/O (Default for MCP Clients)
-
-Launch Paridhi over `stdio` transport:
+### 1. Streamable HTTP (Default for Web & Remote Agent Clients)
 
 ```bash
-uv run paridhi
-# Or explicitly:
+uv run paridhi --transport http --host 0.0.0.0 --port 8000
+```
+Server endpoint will be accessible at: `http://localhost:8000/mcp`.
+
+### 2. Standard I/O (Local Process for Claude Desktop)
+
+```bash
 uv run paridhi --transport stdio
 ```
 
-### 2. Network Transports (SSE)
-
-Launch Paridhi as a Server-Sent Events (SSE) server for remote or HTTP-based clients:
-
-```bash
-uv run paridhi --transport sse --host 127.0.0.1 --port 8000
-```
-
-### 3. MCP Client Configuration
-
-To integrate with an MCP client (such as Claude Desktop), add Paridhi to your MCP configuration:
+To configure in **Claude Desktop** (`claude_desktop_config.json`):
 
 ```json
 {
@@ -117,10 +279,16 @@ To integrate with an MCP client (such as Claude Desktop), add Paridhi to your MC
       "command": "uv",
       "args": [
         "--directory",
-        "/path/to/paridhi",
+        "/absolute/path/to/paridhi",
         "run",
-        "paridhi"
-      ]
+        "paridhi",
+        "--transport",
+        "stdio"
+      ],
+      "env": {
+        "GOOGLE_MAPS_API_KEY": "AIzaSyYourActualGoogleMapsApiKey",
+        "PARIDHI_SPATIAL_PROVIDER": "google"
+      }
     }
   }
 }
@@ -131,82 +299,76 @@ To integrate with an MCP client (such as Claude Desktop), add Paridhi to your MC
 ## Exposed MCP Tools
 
 ### `ping`
-Health check tool that verifies that the server is operational.
+Verifies server health and returns the current operational status.
 
-- **Inputs:** None
-- **Output:**
+- **Parameters:** None `{}`
+- **Example Response:**
   ```json
   {
     "status": "healthy",
     "service": "Paridhi",
     "version": "0.1.0",
-    "timestamp": "2026-09-07T11:15:00Z"
+    "timestamp": "2026-09-07T12:45:00Z"
   }
   ```
+
+---
 
 ### `discover_pois`
-Discovers and filters points of interest within circular spatial bounds centered at the given coordinates.
+Discovers and enriches points of interest (POIs) within circular spatial bounds using real-world geospatial data.
 
-- **Parameters:**
-  - `latitude` (*float*, required): Center latitude in decimal degrees `[-90.0, 90.0]`.
-  - `longitude` (*float*, required): Center longitude in decimal degrees `[-180.0, 180.0]`.
-  - `radius_meters` (*float*, optional, default: `1000.0`): Search radius in meters.
-    - **Geographic Constraint Clamping:** If provided value `< 100.0`, clamped to `100.0m`. If `> 50,000.0`, clamped to `50,000.0m`.
-  - `categories` (*list[str]*, optional): Filter POIs by category (e.g., `["restaurant", "park"]`).
-  - `query` (*str*, optional): Free-text search keyword.
-  - `limit` (*int*, optional, default: `20`): Maximum results to return (`1` to `100`).
-- **Output:**
-  ```json
-  {
-    "center": {
-      "latitude": 19.076,
-      "longitude": 72.8777
-    },
-    "radius_meters": 1000.0,
-    "total_found": 0,
-    "pois": [],
-    "message": "Spatial search perimeter established at radius 1000.0m."
-  }
-  ```
+#### Parameters:
+| Name | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `query` | `str` | `"points of interest"` | Search term, cuisine, or place category (e.g. `"vadapav shops"`, `"coffee"`, `"hospitals"`). |
+| `location` | `str \| null` | `null` | Informal address, landmark, or neighborhood (e.g. `"Bhatta, Paldi"`). Resolved via Geocoding API. |
+| `latitude` | `float \| null` | `null` | Direct center latitude `[-90.0, 90.0]`. |
+| `longitude` | `float \| null` | `null` | Direct center longitude `[-180.0, 180.0]`. |
+| `radius_meters` | `float` | `1000.0` | Search radius in meters. Automatically clamped between `100m` and `50,000m`. |
+| `limit` | `int` | `20` | Maximum results to retrieve (`1` to `20`). |
 
----
+*(Note: Either `location` or both `latitude` and `longitude` must be provided.)*
 
-## Configuration
+#### Example Prompt:
+> *"Discover top vadapav shops within 3000m of 'Bhatta, Paldi'"*
 
-Paridhi loads configuration values from environment variables or a local `.env` file using `pydantic-settings` (with the `PARIDHI_` prefix):
+#### Formatted Markdown Output:
+```markdown
+### Discovered 'vadapav shops' within 3000m of 'Bhatta, Paldi'
 
-| Variable | Type | Default | Description |
-|---|---|---|---|
-| `PARIDHI_SERVER_NAME` | string | `Paridhi` | Name of the FastMCP server instance |
-| `PARIDHI_SERVER_VERSION` | string | `0.1.0` | Semantic version string |
-| `PARIDHI_DEBUG` | boolean | `false` | Enable verbose debug logging |
-| `PARIDHI_LOG_LEVEL` | string | `INFO` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
-| `PARIDHI_MIN_RADIUS_METERS` | float | `100.0` | Minimum allowable spatial radius (meters) |
-| `PARIDHI_MAX_RADIUS_METERS` | float | `50000.0` | Maximum allowable spatial radius (meters) |
-| `PARIDHI_DEFAULT_RADIUS_METERS`| float | `1000.0` | Default search radius (meters) |
-| `PARIDHI_DEFAULT_RESULTS_LIMIT`| integer | `20` | Default POI count limit |
-| `PARIDHI_MAX_RESULTS_LIMIT` | integer | `100` | Upper limit for POI results |
-| `PARIDHI_TRANSPORT` | string | `stdio` | Transport mechanism (`stdio`, `sse`, `stream`) |
-| `PARIDHI_HOST` | string | `127.0.0.1` | Binding host for network transports |
-| `PARIDHI_PORT` | integer | `8000` | Port for network transports |
+| Place Name | Address | Google Map location | Google Ratings |
+| :--- | :--- | :--- | :--- |
+| **Jay Bhavani Vadapav** | Paldi Cross Road, Paldi, Ahmedabad, Gujarat 380007 | [Pin](https://maps.google.com/?cid=123456789012345) | [4.3 ★ (2,450)](https://maps.google.com/?cid=123456789012345) |
+| **Shreeji Krupa Bombay Vadapav** | Near Bhatta Circle, Paldi, Ahmedabad, Gujarat 380007 | [Pin](https://maps.google.com/?cid=234567890123456) | [4.5 ★ (1,820)](https://maps.google.com/?cid=234567890123456) |
+| **Gajanand Pauva & Vadapav Center** | Fatehpura Road, Near Bhatta, Paldi, Ahmedabad 380007 | [Pin](https://maps.google.com/?cid=345678901234567) | [4.1 ★ (940)](https://maps.google.com/?cid=345678901234567) |
+| **Karnavati Dabeli & Vadapav** | Mahalaxmi Cross Road, Paldi, Ahmedabad, Gujarat 380007 | [Pin](https://maps.google.com/?cid=456789012345678) | [4.2 ★ (1,150)](https://maps.google.com/?cid=456789012345678) |
+```
 
 ---
 
-## Developer Workflows
+## Continuous Documentation Maintenance
 
-All development commands are orchestrated through `uv`:
+> [!IMPORTANT]
+> To ensure documentation never drifts from code behavior, Paridhi maintains an automated contract:
+> 1. All AI agents working in this repository are bound by the instructions in [`AGENTS.md`](./AGENTS.md).
+> 2. Whenever tools, parameters, providers, or configurations are **added, modified, or removed**, both `README.md` and `AGENTS.md` must be updated concurrently.
+> 3. An automated test (`tests/test_docs_sync.py`) validates that all registered FastMCP tools are documented in both `README.md` and `AGENTS.md`.
+
+---
+
+## Testing & Quality Control
+
+Execute all verification checks locally via `uv`:
 
 ```bash
-# Run unit & integration test suite
+# Run pytest test suite (including docs synchronization test)
 uv run pytest
 
-# Check code quality and style
+# Check code formatting & linting
 uv run ruff check .
-
-# Check formatting
 uv run ruff format --check .
 
-# Run static type checking
+# Strict type analysis
 uv run mypy src tests
 ```
 
@@ -214,4 +376,4 @@ uv run mypy src tests
 
 ## License
 
-Apache-2.0
+[Apache-2.0](./LICENSE)

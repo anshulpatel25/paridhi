@@ -8,8 +8,11 @@ from paridhi.domain.models import (
     Coordinates,
     DiscoverPOIsRequest,
     HealthCheckResponse,
+    Place,
+    PlaceSearchRequest,
     PointOfInterest,
     clamp_radius,
+    format_places_table,
 )
 
 
@@ -68,15 +71,83 @@ def test_circular_bound_clamping(input_radius: float, expected_radius: float) ->
 
 def test_discover_pois_request_clamping() -> None:
     """Test DiscoverPOIsRequest enforces radius clamping."""
-    req_low = DiscoverPOIsRequest(latitude=0.0, longitude=0.0, radius_meters=15.0)
+    req_low = DiscoverPOIsRequest(
+        query="vadapav",
+        latitude=0.0,
+        longitude=0.0,
+        radius_meters=15.0,
+    )
     assert req_low.radius_meters == 100.0
 
-    req_high = DiscoverPOIsRequest(latitude=0.0, longitude=0.0, radius_meters=80000.0)
+    req_high = DiscoverPOIsRequest(
+        query="vadapav",
+        latitude=0.0,
+        longitude=0.0,
+        radius_meters=80000.0,
+    )
     assert req_high.radius_meters == 50000.0
 
     bound = req_low.to_circular_bound()
     assert bound.radius_meters == 100.0
     assert bound.center.latitude == 0.0
+
+
+def test_discover_pois_request_with_location_string() -> None:
+    """Test DiscoverPOIsRequest accepting informal neighborhood string."""
+    req = DiscoverPOIsRequest(
+        query="vadapav shops",
+        location="Bhatta, Paldi",
+        radius_meters=3000.0,
+    )
+    assert req.location == "Bhatta, Paldi"
+    assert req.radius_meters == 3000.0
+    assert req.query == "vadapav shops"
+
+
+def test_discover_pois_request_missing_origin() -> None:
+    """Test DiscoverPOIsRequest rejects when neither location nor coords provided."""
+    with pytest.raises(ValidationError):
+        DiscoverPOIsRequest(query="coffee")
+
+
+def test_place_model_and_formatting() -> None:
+    """Test Place entity markdown formatting for deep links."""
+    place = Place(
+        name="Jay Bhavani Vadapav",
+        formatted_address="Paldi Cross Road, Ahmedabad",
+        maps_url="https://maps.google.com/?cid=123456789012345",
+        rating=4.3,
+        user_rating_count=2450,
+        location=Coordinates(latitude=23.0125, longitude=72.5635),
+    )
+    assert place.map_location_link == "[Pin](https://maps.google.com/?cid=123456789012345)"
+    assert place.ratings_link == "[4.3 ★ (2,450)](https://maps.google.com/?cid=123456789012345)"
+
+    table = format_places_table([place])
+    assert "| **Jay Bhavani Vadapav** |" in table
+    assert "[Pin](https://maps.google.com/?cid=123456789012345)" in table
+    assert "[4.3 ★ (2,450)](https://maps.google.com/?cid=123456789012345)" in table
+
+
+def test_place_without_ratings() -> None:
+    """Test Place formatting when ratings are missing."""
+    place = Place(
+        name="Hidden Gems",
+        formatted_address="Ahmedabad",
+        location=Coordinates(latitude=23.0, longitude=72.0),
+    )
+    assert place.ratings_link == "N/A"
+    assert place.map_location_link == "[Pin](https://maps.google.com/?q=23.0,72.0)"
+
+
+def test_place_search_request_clamping() -> None:
+    """Test PlaceSearchRequest clamps radius."""
+    req = PlaceSearchRequest(
+        query="vadapav",
+        center=Coordinates(latitude=23.0, longitude=72.0),
+        radius_meters=50,
+    )
+    assert req.radius_meters == 100
 
 
 def test_point_of_interest_model() -> None:

@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 MIN_RADIUS_METERS: float = 100.0
 MAX_RADIUS_METERS: float = 50_000.0
@@ -37,6 +37,9 @@ class Coordinates(BaseModel):
         description="Longitude in decimal degrees [-180.0, 180.0]",
     )
 
+    def __str__(self) -> str:
+        return f"{self.latitude},{self.longitude}"
+
 
 class CircularBound(BaseModel):
     """Circular geographic boundary defined by a center point and search radius."""
@@ -61,6 +64,97 @@ class CircularBound(BaseModel):
             msg = f"radius_meters must be a valid numeric value, got: {value!r}"
             raise ValueError(msg) from err
         return clamp_radius(val)
+
+
+class Place(BaseModel):
+    """Geographic Place entity representing a discovered Point of Interest."""
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str = Field(..., description="Display name of the place")
+    formatted_address: str = Field(default="N/A", description="Formatted street address")
+    maps_url: str | None = Field(default=None, description="Direct URL to view the place on maps")
+    rating: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=5.0,
+        description="Average star rating (0.0 to 5.0)",
+    )
+    user_rating_count: int | None = Field(
+        default=None,
+        ge=0,
+        description="Total number of user reviews/ratings",
+    )
+    location: Coordinates | None = Field(
+        default=None,
+        description="Geographic coordinates of the place",
+    )
+
+    @property
+    def map_location_link(self) -> str:
+        """Markdown formatted pin link: [Pin](<url>)."""
+        url = self.maps_url
+        if not url and self.location:
+            url = f"https://maps.google.com/?q={self.location.latitude},{self.location.longitude}"
+        return f"[Pin]({url})" if url else "[Pin](#)"
+
+    @property
+    def ratings_link(self) -> str:
+        """Markdown formatted ratings link: [<rating> ★ (<count>)](<url>) or N/A."""
+        if self.rating is None:
+            return "N/A"
+        count_str = f"{self.user_rating_count:,}" if self.user_rating_count is not None else "0"
+        label = f"{self.rating:.1f} ★ ({count_str})"
+        url = self.maps_url
+        if not url and self.location:
+            url = f"https://maps.google.com/?q={self.location.latitude},{self.location.longitude}"
+        return f"[{label}]({url})" if url else label
+
+
+def format_places_table(places: list[Place]) -> str:
+    """Format a collection of Place objects into a clean Markdown table with deep links.
+
+    Header format:
+    | Place Name | Address | Google Map location | Google Ratings |
+    | :--- | :--- | :--- | :--- |
+    """
+    if not places:
+        return "No places found matching the search criteria."
+
+    lines = [
+        "| Place Name | Address | Google Map location | Google Ratings |",
+        "| :--- | :--- | :--- | :--- |",
+    ]
+    for p in places:
+        lines.append(
+            f"| **{p.name}** | {p.formatted_address} | {p.map_location_link} | {p.ratings_link} |"
+        )
+    return "\n".join(lines)
+
+
+class PlaceSearchRequest(BaseModel):
+    """Domain request parameters for place searching."""
+
+    query: str = Field(
+        ..., min_length=1, description="Search term or POI keyword (e.g. 'vadapav shops')"
+    )
+    center: Coordinates = Field(..., description="Geographic coordinates of circular search origin")
+    radius_meters: int = Field(
+        default=int(DEFAULT_RADIUS_METERS),
+        description="Search radius in meters clamped [100m, 50,000m]",
+    )
+
+    @field_validator("radius_meters", mode="before")
+    @classmethod
+    def clamp_int_radius(cls, value: Any) -> int:
+        if value is None:
+            return int(DEFAULT_RADIUS_METERS)
+        try:
+            val = int(float(value))
+        except (ValueError, TypeError) as err:
+            msg = f"radius_meters must be a valid numeric value, got: {value!r}"
+            raise ValueError(msg) from err
+        return int(clamp_radius(val))
 
 
 class PointOfInterest(BaseModel):
@@ -90,16 +184,24 @@ class PointOfInterest(BaseModel):
 class DiscoverPOIsRequest(BaseModel):
     """Request parameters for discovering POIs within circular spatial bounds."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
-    latitude: float = Field(
-        ...,
+    query: str = Field(
+        default="points of interest",
+        description="Search term, cuisine, or category keyword (e.g. 'vadapav shops')",
+    )
+    location: str | None = Field(
+        default=None,
+        description="Origin address or neighborhood string to geocode (e.g. 'Bhatta, Paldi')",
+    )
+    latitude: float | None = Field(
+        default=None,
         ge=-90.0,
         le=90.0,
         description="Latitude of search center [-90.0, 90.0]",
     )
-    longitude: float = Field(
-        ...,
+    longitude: float | None = Field(
+        default=None,
         ge=-180.0,
         le=180.0,
         description="Longitude of search center [-180.0, 180.0]",
@@ -110,17 +212,13 @@ class DiscoverPOIsRequest(BaseModel):
     )
     categories: list[str] | None = Field(
         default=None,
-        description="Optional list of category filters (e.g. ['restaurant', 'park', 'museum'])",
-    )
-    query: str | None = Field(
-        default=None,
-        description="Optional free-text search term or keyword to match against POI names/tags",
+        description="Optional list of category filters",
     )
     limit: int = Field(
         default=20,
         ge=1,
-        le=100,
-        description="Maximum number of POIs to return (1-100)",
+        le=20,
+        description="Maximum number of POIs to return (1-20)",
     )
 
     @field_validator("radius_meters", mode="before")
@@ -136,8 +234,22 @@ class DiscoverPOIsRequest(BaseModel):
             raise ValueError(msg) from err
         return clamp_radius(val)
 
+    @model_validator(mode="after")
+    def validate_spatial_origin(self) -> "DiscoverPOIsRequest":
+        """Ensure either an address/neighborhood string or valid coordinates are provided."""
+        has_coords = self.latitude is not None and self.longitude is not None
+        has_location = bool(self.location and self.location.strip())
+        if not has_coords and not has_location:
+            raise ValueError(
+                "Either 'location' (e.g. 'Bhatta, Paldi') or both 'latitude' and 'longitude' "
+                "must be specified as search origin."
+            )
+        return self
+
     def to_circular_bound(self) -> CircularBound:
         """Convert validated request into a domain CircularBound object."""
+        if self.latitude is None or self.longitude is None:
+            raise ValueError("Coordinates must be resolved before converting to CircularBound")
         return CircularBound(
             center=Coordinates(latitude=self.latitude, longitude=self.longitude),
             radius_meters=self.radius_meters,
@@ -150,9 +262,17 @@ class DiscoverPOIsResponse(BaseModel):
     center: Coordinates = Field(..., description="Center of the circular search area")
     radius_meters: float = Field(..., description="Effective radius applied in meters (clamped)")
     total_found: int = Field(..., description="Number of POIs returned in this response")
+    places: list[Place] = Field(
+        default_factory=list,
+        description="Collection of discovered place entities",
+    )
+    markdown_table: str = Field(
+        default="",
+        description="Formatted Markdown table with deep links",
+    )
     pois: list[PointOfInterest] = Field(
         default_factory=list,
-        description="Collection of discovered points of interest",
+        description="Backward-compatible POI collection",
     )
     message: str | None = Field(
         default=None,

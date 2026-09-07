@@ -56,17 +56,54 @@ class POINotFoundError(DomainError):
         super().__init__(f"Point of Interest not found: {poi_id}", details={"poi_id": poi_id})
 
 
+class GeocodingFailedError(DomainError):
+    """Raised when an address or location string cannot be resolved into coordinates."""
+
+    def __init__(self, location: str, reason: str | None = None) -> None:
+        msg = f"Could not geocode location '{location}'"
+        if reason:
+            msg += f": {reason}"
+        super().__init__(msg, details={"location": location, "reason": reason})
+
+
+class ZeroPlacesFoundError(DomainError):
+    """Raised when no places or POIs are found for the search criteria."""
+
+    def __init__(
+        self, query: str, location: str | None = None, radius_meters: int | None = None
+    ) -> None:
+        loc_str = f" near '{location}'" if location else ""
+        rad_str = f" within {radius_meters}m" if radius_meters else ""
+        msg = f"No places found matching '{query}'{loc_str}{rad_str}."
+        super().__init__(
+            msg,
+            details={"query": query, "location": location, "radius_meters": radius_meters},
+        )
+
+
 class ProviderError(ParidhiError):
     """Base exception for external POI data provider and enrichment failures."""
 
 
-class ProviderConnectionError(ProviderError):
-    """Raised when failing to connect to an external POI provider."""
+class ProviderUnavailableError(ProviderError):
+    """Raised when failing to connect to or communicate with an external provider."""
 
 
-class ProviderTimeoutError(ProviderError):
+class ProviderConnectionError(ProviderUnavailableError):
+    """Raised when failing to establish a network connection to the provider."""
+
+
+class ProviderTimeoutError(ProviderUnavailableError):
     """Raised when a request to an external POI provider times out."""
 
 
-class ProviderRateLimitError(ProviderError):
-    """Raised when external POI provider rate limits are exceeded."""
+class ProviderQuotaExceededError(ProviderError):
+    """Raised when external POI provider rate limits or quotas are exceeded."""
+
+
+class ProviderRateLimitError(ProviderQuotaExceededError):
+    """Alias for quota exceeded / rate limited conditions."""
+
+
+class ProviderAuthenticationError(ProviderError):
+    """Raised when authentication with the external provider fails (invalid/missing API key)."""

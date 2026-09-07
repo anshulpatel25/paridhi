@@ -1,16 +1,21 @@
-"""Domain layer for Paridhi containing models, entities, and exceptions."""
+"""Domain layer for Paridhi containing models, entities, ports, and exceptions."""
 
 from paridhi.domain.exceptions import (
     DomainError,
+    GeocodingFailedError,
     InvalidCoordinateError,
     ParidhiError,
     POINotFoundError,
+    ProviderAuthenticationError,
     ProviderConnectionError,
     ProviderError,
+    ProviderQuotaExceededError,
     ProviderRateLimitError,
     ProviderTimeoutError,
+    ProviderUnavailableError,
     RadiusOutOfRangeError,
     ValidationError,
+    ZeroPlacesFoundError,
 )
 from paridhi.domain.models import (
     DEFAULT_RADIUS_METERS,
@@ -21,9 +26,13 @@ from paridhi.domain.models import (
     DiscoverPOIsRequest,
     DiscoverPOIsResponse,
     HealthCheckResponse,
+    Place,
+    PlaceSearchRequest,
     PointOfInterest,
     clamp_radius,
+    format_places_table,
 )
+from paridhi.domain.ports import SpatialProvider
 
 __all__ = [
     "DEFAULT_RADIUS_METERS",
@@ -34,16 +43,25 @@ __all__ = [
     "DiscoverPOIsRequest",
     "DiscoverPOIsResponse",
     "DomainError",
+    "GeocodingFailedError",
     "HealthCheckResponse",
     "InvalidCoordinateError",
     "POINotFoundError",
     "ParidhiError",
+    "Place",
+    "PlaceSearchRequest",
     "PointOfInterest",
+    "ProviderAuthenticationError",
     "ProviderConnectionError",
     "ProviderError",
+    "ProviderQuotaExceededError",
     "ProviderRateLimitError",
     "ProviderTimeoutError",
+    "ProviderUnavailableError",
     "RadiusOutOfRangeError",
+    "SpatialProvider",
     "ValidationError",
+    "ZeroPlacesFoundError",
     "clamp_radius",
+    "format_places_table",
 ]
