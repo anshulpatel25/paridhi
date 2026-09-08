@@ -107,3 +107,7 @@ class ProviderRateLimitError(ProviderQuotaExceededError):
 
 class ProviderAuthenticationError(ProviderError):
     """Raised when authentication with the external provider fails (invalid/missing API key)."""
+
+
+class AuthConfigurationError(ParidhiError):
+    """Raised when authentication or OAuth identity provider configuration is invalid."""

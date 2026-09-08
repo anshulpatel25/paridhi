@@ -6,7 +6,7 @@
 [![Type Checked](https://img.shields.io/badge/mypy-strict-blue.svg)](https://mypy-lang.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-**Paridhi** (*परिधि* — Sanskrit for *perimeter*, *circumference*, or *boundary*) is a [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server built with Python and [FastMCP](https://github.com/jlowin/fastmcp). It enables AI agents to discover, filter, and enrich local points of interest (POIs) within circular spatial bounds using Google Maps Platform (Geocoding API & Places API New).
+**Paridhi** (*परिधि* — Sanskrit for *perimeter*, *circumference*, or *boundary*) is a [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server built with Python and [FastMCP](https://github.com/jlowin/fastmcp). It enables AI agents to discover, filter, and enrich local points of interest (POIs) within circular spatial bounds using Google Maps Platform (Geocoding API & Places API New), secured with built-in OAuth 2.1 authentication (Google IdP, GitHub, or generic OIDC).
 
 ---
 
@@ -14,7 +14,8 @@
 
 - 🎯 **Circular Spatial Perimeters**: Enforces strict radial boundaries and haversine perimeter filtering.
 - 🛡️ **Predictable Clamping**: Automatically bounds search radii to `[100m, 50,000m]` to guard against accidental massive geofences.
-- 📐 **Hexagonal / Ports & Adapters Architecture**: Decouples domain logic from external providers (Google Maps, Mock, Mapbox, OSM).
+- 🔐 **Built-in FastMCP OAuth 2.1**: Native OAuth 2.1 authorization code flow with PKCE, pre-integrated with Google OAuth 2.0 and flexible for any future Identity Provider (GitHub, Keycloak, Auth0, generic OIDC).
+- 📐 **Hexagonal / Ports & Adapters Architecture**: Decouples domain logic from external geospatial providers and identity providers.
 - 💰 **Billing Optimization**: Uses explicit Google Places API (New) Field Masks (`X-Goog-FieldMask`) to only retrieve required fields.
 - 🔗 **Deep-Linked Results**: Formats results as rich Markdown tables with deep links to Google Maps pins and verified ratings.
 - 🚦 **Fault Resilient**: Gracefully intercepts quotas, missing locations, and network errors into clean Markdown notices without leaking stack traces.
@@ -34,6 +35,13 @@ graph TD
         Server --> Tool2["tool: discover_pois"]
     end
 
+    subgraph Authentication Layer
+        AuthFactory["Auth Factory<br/>(infrastructure/auth/factory.py)"] -.->|Injects AuthProvider| Server
+        GoogleIdP["GoogleProvider<br/>(Google OAuth 2.0)"] ---|Implements| AuthFactory
+        GitHubIdP["GitHubProvider<br/>(GitHub OAuth)"] ---|Implements| AuthFactory
+        OIDCIdP["OIDCProxy<br/>(Generic OIDC IdP)"] ---|Implements| AuthFactory
+    end
+
     subgraph Domain Layer
         Server --> RequestModel["DiscoverPOIsRequest<br/>(domain/models.py)"]
         RequestModel --> Bounds["CircularBound & Coordinates<br/>(Clamping [100m, 50km])"]
@@ -42,14 +50,15 @@ graph TD
     end
 
     subgraph Infrastructure Layer
-        Factory["Provider Factory<br/>(infrastructure/factory.py)"] -.->|Instantiates| Port
+        Factory["Spatial Factory<br/>(infrastructure/factory.py)"] -.->|Instantiates| Port
         GoogleAdapter["GoogleSpatialAdapter<br/>(infrastructure/google/adapter.py)"] ---|Implements| Port
         MockAdapter["MockSpatialProvider<br/>(infrastructure/mock.py)"] ---|Implements| Port
     end
 
-    subgraph Upstream APIs
+    subgraph External Services
         GoogleAdapter --> GeocodingAPI["Google Geocoding API"]
         GoogleAdapter --> PlacesAPI["Google Places API (New)"]
+        GoogleIdP --> GoogleAccounts["Google Accounts OAuth 2.0"]
     end
 ```
 
@@ -59,7 +68,43 @@ graph TD
 
 All diagrams use standard Mermaid syntax and render natively on the GitHub Web UI.
 
-### 1. POI Discovery via Informal Location String
+### 1. OAuth 2.1 Client Authentication via Google IdP
+FastMCP's built-in OAuth support protects HTTP and SSE transports using standard OAuth 2.1 with PKCE.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as "User (Browser)"
+    actor Client as "MCP Client (FastMCP / Agent)"
+    participant FastMCP as "Paridhi FastMCP Server<br/>(GoogleProvider)"
+    participant GoogleAuth as "Google Accounts OAuth 2.0<br/>(accounts.google.com)"
+
+    Client->>FastMCP: GET /mcp (without token)
+    FastMCP-->>Client: 401 Unauthorized (WWW-Authenticate: Bearer, resource metadata)
+    Client->>FastMCP: GET /.well-known/oauth-authorization-server
+    FastMCP-->>Client: 200 OK (authorization_endpoint, token_endpoint)
+    
+    Client->>FastMCP: Start local callback listener (http://127.0.0.1:<port>/callback)
+    Client->>User: Open browser with PKCE authorization URL
+    User->>FastMCP: GET /authorize?response_type=code&code_challenge=...
+    FastMCP-->>User: Redirect to Google OAuth consent screen
+    
+    User->>GoogleAuth: Authenticate & approve requested scopes (openid, email)
+    GoogleAuth-->>FastMCP: Redirect to /auth/callback?code=AUTH_CODE
+    FastMCP->>GoogleAuth: Exchange AUTH_CODE with client_secret for Google tokens
+    GoogleAuth-->>FastMCP: Google tokens (access_token, id_token, refresh_token)
+    
+    FastMCP-->>User: Redirect to local client callback with FastMCP auth code
+    Client->>FastMCP: POST /token (exchange code + code_verifier via PKCE)
+    FastMCP-->>Client: Return FastMCP access_token & refresh_token
+    
+    Client->>FastMCP: POST /mcp (discover_pois with Authorization: Bearer <token>)
+    FastMCP-->>Client: 200 OK: Discovered POIs table
+```
+
+---
+
+### 2. POI Discovery via Informal Location String
 This is the standard flow when an agent queries for places near a neighborhood or landmark name.
 
 ```mermaid
@@ -95,7 +140,7 @@ sequenceDiagram
 
 ---
 
-### 2. Direct Coordinate Search with Automatic Radius Clamping
+### 3. Direct Coordinate Search with Automatic Radius Clamping
 When coordinates are directly provided, geocoding is bypassed. If a requested radius falls outside allowable boundaries, Paridhi safely clamps it.
 
 ```mermaid
@@ -125,7 +170,7 @@ sequenceDiagram
 
 ---
 
-### 3. Server Health Verification (`ping`)
+### 4. Server Health Verification (`ping`)
 
 ```mermaid
 sequenceDiagram
@@ -138,29 +183,6 @@ sequenceDiagram
     FastMCP->>Settings: Read server_name and server_version
     Settings-->>FastMCP: Name="Paridhi", Version="0.1.0"
     FastMCP-->>Client: HealthCheckResponse(status="healthy", timestamp=UTC)
-```
-
----
-
-### 4. Upstream Error Handling & Graceful Recovery
-Paridhi shields the agent and host LLM from unhandled API exceptions and raw HTML error pages.
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Client as "MCP Client"
-    participant FastMCP as "FastMCP Server"
-    participant Adapter as "GoogleSpatialAdapter"
-    participant RemoteAPI as "Google Maps API"
-
-    Client->>FastMCP: discover_pois(location="InvalidXYZNonExistentPlace")
-    FastMCP->>Adapter: geocode("InvalidXYZNonExistentPlace")
-    Adapter->>RemoteAPI: GET /maps/api/geocode/json
-    RemoteAPI-->>Adapter: 200 OK: {status: "ZERO_RESULTS"}
-    Adapter-->>FastMCP: raise GeocodingFailedError
-    
-    FastMCP->>FastMCP: Intercept GeocodingFailedError
-    FastMCP-->>Client: "⚠️ Geocoding Error: No matching location found. Please check spelling..."
 ```
 
 ---
@@ -180,7 +202,7 @@ paridhi/
 │   └── paridhi/
 │       ├── __init__.py                         # Public package exports
 │       ├── py.typed                            # PEP 561 typing marker
-│       ├── main.py                             # CLI runner (stdio, http, sse transports)
+│       ├── main.py                             # CLI runner (stdio, http, sse, auth CLI flags)
 │       ├── core/
 │       │   ├── __init__.py
 │       │   └── config.py                       # pydantic-settings configuration
@@ -193,6 +215,9 @@ paridhi/
 │       │   ├── __init__.py
 │       │   ├── factory.py                      # SpatialProvider dependency injection factory
 │       │   ├── mock.py                         # Mock provider with realistic offline fixtures
+│       │   ├── auth/
+│       │   │   ├── __init__.py
+│       │   │   └── factory.py                  # Pluggable OAuth provider factory (Google, GitHub, OIDC)
 │       │   └── google/
 │       │       ├── __init__.py
 │       │       ├── adapter.py                  # Google Geocoding & Places API (New) adapter
@@ -202,6 +227,7 @@ paridhi/
 │           └── server.py                       # FastMCP server & registered tool handlers
 └── tests/
     ├── __init__.py
+    ├── test_auth.py                            # OAuth integration and provider factory tests
     ├── test_config.py                          # Configuration parsing tests
     ├── test_domain_models.py                   # Spatial validation, Place entity, and table formatting
     ├── test_google_adapter.py                  # Unit tests for Google adapter (mocked HTTP)
@@ -219,6 +245,7 @@ Paridhi uses **`uv`** exclusively for dependency resolution, virtual environment
 - Python 3.11+
 - [`uv`](https://docs.astral.sh/uv/) (v0.11+)
 - Google Maps Platform API Key (with *Geocoding API* and *Places API (New)* enabled)
+- *(Optional)* Google Cloud Console OAuth 2.0 Web Client credentials if enabling OAuth
 
 ### Installation
 
@@ -236,7 +263,7 @@ Copy the sample environment file:
 cp .env.example .env
 ```
 
-Edit `.env` to configure your provider:
+Edit `.env` to configure your credentials:
 
 ```env
 # Geospatial Provider ('google' or 'mock')
@@ -252,6 +279,121 @@ PARIDHI_PORT=8000
 ```
 
 *(Tip: For offline development or unit testing without an API key, set `PARIDHI_SPATIAL_PROVIDER=mock`)*
+
+---
+
+## OAuth 2.1 Authentication Setup
+
+FastMCP provides built-in OAuth 2.1 authorization server endpoints. Paridhi enables this via a pluggable authentication infrastructure layer supporting **Google**, **GitHub**, and any **Generic OIDC** identity provider.
+
+### 1. Integrating Google OAuth 2.0 (Recommended Default IdP)
+
+To use Google as your Identity Provider (IdP):
+
+#### Step 1: Create Google OAuth 2.0 Credentials
+1. Open the [Google Cloud Console Credentials Page](https://console.cloud.google.com/apis/credentials).
+2. Click **Create Credentials** $\rightarrow$ **OAuth client ID**.
+3. In **Application type**, select **Web application**.
+4. Set a name (e.g. `Paridhi FastMCP Server`).
+5. Under **Authorized JavaScript origins**, add:
+   * `http://localhost:8000`
+   * `http://127.0.0.1:8000` (and your production domain if deployed)
+6. Under **Authorized redirect URIs**, add:
+   * `http://localhost:8000/auth/callback`
+   * `http://127.0.0.1:8000/auth/callback`
+7. Click **Create**, then copy your **Client ID** and **Client Secret**.
+
+#### Step 2: Configure `.env`
+Add your Google credentials to `.env`:
+
+```env
+# Enable OAuth 2.1
+PARIDHI_AUTH_ENABLED=true
+PARIDHI_AUTH_PROVIDER=google
+PARIDHI_AUTH_BASE_URL=http://localhost:8000
+
+# Google OAuth Credentials
+GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=GOCSPX-your-client-secret
+```
+
+#### Step 3: Run the Server with OAuth
+```bash
+# Via environment variables:
+uv run paridhi --transport http
+
+# Or explicitly via CLI flags:
+uv run paridhi --transport http --auth --auth-provider google
+```
+
+---
+
+### 2. Future IdP Flexibility (Pluggable Architecture)
+
+Paridhi's authentication architecture is decoupled from Google. You can seamlessly switch to another Identity Provider simply by updating your configuration:
+
+#### A. GitHub OAuth
+```env
+PARIDHI_AUTH_ENABLED=true
+PARIDHI_AUTH_PROVIDER=github
+GITHUB_CLIENT_ID=your_github_client_id
+GITHUB_CLIENT_SECRET=your_github_client_secret
+```
+
+#### B. Generic OpenID Connect (Keycloak, Auth0, Okta, Authentik)
+Any OIDC-compliant IdP can be used by providing its OpenID Connect Discovery URL:
+```env
+PARIDHI_AUTH_ENABLED=true
+PARIDHI_AUTH_PROVIDER=oidc
+OIDC_CONFIG_URL=https://auth.example.com/.well-known/openid-configuration
+OIDC_CLIENT_ID=your_oidc_client_id
+OIDC_CLIENT_SECRET=your_oidc_client_secret
+```
+
+---
+
+### 3. Connecting to an OAuth-Protected Server
+
+#### With FastMCP Python Client:
+Clients use FastMCP's built-in OAuth helper:
+
+```python
+from fastmcp import Client
+
+# Client automatically performs PKCE code exchange with the server
+async with Client("http://localhost:8000/mcp", auth="oauth") as client:
+    result = await client.call_tool(
+        "discover_pois",
+        {"query": "vadapav shops", "location": "Bhatta, Paldi", "radius_meters": 3000},
+    )
+    print(result.content[0].text)
+```
+
+#### With Pre-Registered Client Credentials:
+```python
+from fastmcp import Client
+from fastmcp.client.auth import OAuth
+
+oauth = OAuth(
+    client_id="pre-registered-client-id",
+    client_secret="pre-registered-client-secret",
+)
+
+async with Client("http://localhost:8000/mcp", auth=oauth) as client:
+    tools = await client.list_tools()
+```
+
+---
+
+### 4. Dynamic Client Registration (RFC 7591) & Gemini Spark Integration
+
+Paridhi fully supports **RFC 7591 Dynamic Client Registration (DCR)** out of the box through FastMCP's OAuth proxy:
+
+1. **Automatic Discovery**: When **Gemini Spark** (or any compliant MCP client) connects to `http://localhost:8000/mcp`, it fetches `/.well-known/oauth-authorization-server` to discover the registration and authorization endpoints.
+2. **Dynamic Client Creation**: The client calls `POST /register` with its metadata (e.g. `client_name: "Gemini Spark"`, redirect URIs). Paridhi validates the request and issues a dynamic client ID.
+3. **PKCE Flow**: The client initiates the PKCE Authorization Code flow with its dynamic client ID, redirects through Google for consent, and receives an access token.
+4. **No Pre-Registration Needed on Client**: You do not need to hardcode the client ID inside Gemini Spark — DCR negotiates client credentials dynamically on demand.
+
 
 ---
 
@@ -308,7 +450,7 @@ Verifies server health and returns the current operational status.
     "status": "healthy",
     "service": "Paridhi",
     "version": "0.1.0",
-    "timestamp": "2026-09-07T12:45:00Z"
+    "timestamp": "2026-09-08T12:45:00Z"
   }
   ```
 
@@ -351,8 +493,8 @@ Discovers and enriches points of interest (POIs) within circular spatial bounds 
 > [!IMPORTANT]
 > To ensure documentation never drifts from code behavior, Paridhi maintains an automated contract:
 > 1. All AI agents working in this repository are bound by the instructions in [`AGENTS.md`](./AGENTS.md).
-> 2. Whenever tools, parameters, providers, or configurations are **added, modified, or removed**, both `README.md` and `AGENTS.md` must be updated concurrently.
-> 3. An automated test (`tests/test_docs_sync.py`) validates that all registered FastMCP tools are documented in both `README.md` and `AGENTS.md`.
+> 2. Whenever tools, parameters, providers, auth mechanisms, or configurations are **added, modified, or removed**, both `README.md` and `AGENTS.md` must be updated concurrently.
+> 3. An automated test (`tests/test_docs_sync.py`) validates that all registered FastMCP tools and authentication policies are documented in both `README.md` and `AGENTS.md`.
 
 ---
 
@@ -361,7 +503,7 @@ Discovers and enriches points of interest (POIs) within circular spatial bounds 
 Execute all verification checks locally via `uv`:
 
 ```bash
-# Run pytest test suite (including docs synchronization test)
+# Run pytest test suite (including auth and docs synchronization tests)
 uv run pytest
 
 # Check code formatting & linting

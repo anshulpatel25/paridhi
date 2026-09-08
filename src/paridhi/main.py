@@ -54,6 +54,25 @@ def parse_args() -> argparse.Namespace:
         default=settings.debug,
         help="Enable debug logging mode",
     )
+    parser.add_argument(
+        "--auth",
+        action="store_true",
+        default=None,
+        help="Enable OAuth 2.1 authentication on the server",
+    )
+    parser.add_argument(
+        "--auth-provider",
+        type=str,
+        choices=["google", "github", "oidc", "none"],
+        default=None,
+        help="OAuth identity provider ('google', 'github', 'oidc')",
+    )
+    parser.add_argument(
+        "--auth-base-url",
+        type=str,
+        default=None,
+        help="Public base URL where OAuth endpoints are accessible (e.g. http://localhost:8000)",
+    )
     return parser.parse_args()
 
 
@@ -62,14 +81,29 @@ def main() -> None:
     args = parse_args()
     settings = get_settings()
 
+    # Apply CLI argument overrides if explicitly supplied
+    overrides: dict[str, Any] = {}
+    if args.auth is not None:
+        overrides["auth_enabled"] = args.auth
+    if args.auth_provider is not None:
+        overrides["auth_provider"] = args.auth_provider
+    if args.auth_base_url is not None:
+        overrides["auth_base_url"] = args.auth_base_url
+
+    if overrides:
+        settings = settings.model_copy(update=overrides)
+
     setup_logging(level=settings.log_level, debug=args.debug)
     logger = logging.getLogger("paridhi.main")
 
+    auth_desc = f"enabled ({settings.auth_provider})" if settings.auth_enabled else "disabled"
+
     logger.info(
-        "Starting %s v%s (transport=%s)",
+        "Starting %s v%s (transport=%s, auth=%s)",
         settings.server_name,
         settings.server_version,
         args.transport,
+        auth_desc,
     )
 
     server = create_server(settings)

@@ -81,3 +81,14 @@ def test_documentation_sync_policy_documented() -> None:
     assert "README.md" in agents_text, (
         "AGENTS.md should reference README.md for synchronization mandate"
     )
+
+
+def test_oauth_is_documented() -> None:
+    """Ensure OAuth 2.1 authentication and Google IdP integration are documented."""
+    readme_text = README_PATH.read_text(encoding="utf-8")
+    agents_text = AGENTS_PATH.read_text(encoding="utf-8")
+
+    assert "OAuth" in readme_text, "README.md is missing OAuth documentation"
+    assert "OAuth" in agents_text, "AGENTS.md is missing OAuth documentation"
+    assert "Google" in readme_text, "README.md is missing Google IdP documentation"
+    assert "GoogleProvider" in agents_text, "AGENTS.md is missing GoogleProvider reference"

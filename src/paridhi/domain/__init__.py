@@ -1,6 +1,7 @@
 """Domain layer for Paridhi containing models, entities, ports, and exceptions."""
 
 from paridhi.domain.exceptions import (
+    AuthConfigurationError,
     DomainError,
     GeocodingFailedError,
     InvalidCoordinateError,
@@ -35,6 +36,7 @@ from paridhi.domain.models import (
 from paridhi.domain.ports import SpatialProvider
 
 __all__ = [
+    "AuthConfigurationError",
     "DEFAULT_RADIUS_METERS",
     "MAX_RADIUS_METERS",
     "MIN_RADIUS_METERS",

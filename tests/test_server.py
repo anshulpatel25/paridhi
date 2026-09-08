@@ -149,3 +149,20 @@ async def test_discover_pois_missing_origin(server: FastMCP) -> None:
     )
     text = get_response_text(result)
     assert "⚠️ **Invalid Input**" in text
+
+
+@pytest.mark.asyncio
+async def test_root_info_endpoint(server: FastMCP) -> None:
+    """Verify custom root GET / endpoint returns operational status and MCP endpoint info."""
+    import httpx
+
+    app = server.http_app(transport="http")
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://localhost:8000"
+    ) as client:
+        resp = await client.get("/")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "operational"
+        assert data["service"] == "ParidhiTest"
+        assert "mcp_endpoint" in data
