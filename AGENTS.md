@@ -6,16 +6,15 @@
 
 ## 1. Project Mission & Identity
 
-**Paridhi** (*परिधि* — Sanskrit for *perimeter*, *circumference*, or *boundary*) is a [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server built with Python and [FastMCP](https://github.com/jlowin/fastmcp). It provides spatial boundary enforcement and points of interest (POI) discovery with Google Maps Platform integration (Geocoding API & Places API New), secured with optional OAuth 2.1 authentication (Google IdP, GitHub, or generic OIDC).
+**Paridhi** (*परिधि* — Sanskrit for *perimeter*, *circumference*, or *boundary*) is a [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server built with Python and [FastMCP](https://github.com/jlowin/fastmcp). It provides spatial boundary enforcement and points of interest (POI) discovery with Google Maps Platform integration (Geocoding API & Places API New).
 
 ### Core Design Principles
-1. **Hexagonal Architecture (Ports & Adapters)**: Business logic and spatial domain concepts are decoupled from upstream geospatial APIs, identity providers, and transport protocols.
+1. **Hexagonal Architecture (Ports & Adapters)**: Business logic and spatial domain concepts are decoupled from upstream geospatial APIs and transport protocols.
 2. **Deterministic Spatial Bounds**: Radii are strictly validated and clamped to `[100m, 50,000m]`.
-3. **Pluggable OAuth 2.1 Authentication**: FastMCP's built-in OAuth support is enabled via pluggable identity providers (`google`, `github`, `oidc`), decoupling presentation from IdP implementation details.
-4. **Billing Efficiency**: Geospatial queries use explicit field masks (`PLACES_FIELD_MASK`) to minimize Google Maps Platform API consumption.
-5. **Resilience over Failure**: Upstream errors (quota, 404, network timeouts, auth errors) are captured into typed domain exceptions and presented gracefully to MCP clients without exposing stack traces.
-6. **Strict Type Safety**: Full strict typing verified with `mypy --strict` and modern Python 3.11+ constructs.
-7. **`uv` as Single Source of Truth**: All environment provisioning, dependency locking, and test runs use `uv`.
+3. **Billing Efficiency**: Geospatial queries use explicit field masks (`PLACES_FIELD_MASK`) to minimize Google Maps Platform API consumption.
+4. **Resilience over Failure**: Upstream errors (quota, 404, network timeouts, auth errors) are captured into typed domain exceptions and presented gracefully to MCP clients without exposing stack traces.
+5. **Strict Type Safety**: Full strict typing verified with `mypy --strict` and modern Python 3.11+ constructs.
+6. **`uv` as Single Source of Truth**: All environment provisioning, dependency locking, and test runs use `uv`.
 
 ---
 
@@ -25,14 +24,14 @@
 > **CRITICAL AGENT PROTOCOL: CONTINUOUS DOCUMENTATION SYNCHRONIZATION**
 >
 > Whenever ANY functionality in this codebase is:
-> - **Added** (e.g., new tool, provider adapter, auth IdP, config variable, CLI option, domain schema field)
+> - **Added** (e.g., new tool, provider adapter, config variable, CLI option, domain schema field)
 > - **Removed** (e.g., deleted endpoint, deprecated model property)
 > - **Updated** (e.g., modified tool arguments, revised clamping thresholds, changed output formatting)
 >
 > **You MUST update both `README.md` and `AGENTS.md` in the exact same task/commit before completing your work.**
 >
 > Specifically:
-> 1. **`README.md`**: Update user-facing tool signatures, parameters, OAuth guides, configuration tables, and Mermaid sequence diagrams.
+> 1. **`README.md`**: Update user-facing tool signatures, parameters, configuration tables, and Mermaid sequence diagrams.
 > 2. **`AGENTS.md`**: Update architectural contracts, tool manifests, domain schemas, error handling matrices, and development checklists.
 > 3. Verify compliance by running `uv run pytest tests/test_docs_sync.py`.
 
@@ -42,7 +41,7 @@
 
 ```text
 paridhi/
-├── .env.example                                # Template for configuration, API keys & OAuth credentials
+├── .env.example                                # Template for configuration & API keys
 ├── pyproject.toml                              # Packaging, dependencies, and tool settings
 ├── uv.lock                                     # Deterministic lockfile managed by uv
 ├── README.md                                   # User documentation with GitHub-rendered Mermaid diagrams
@@ -51,22 +50,19 @@ paridhi/
 │   └── paridhi/
 │       ├── __init__.py                         # Package exports and __version__
 │       ├── py.typed                            # PEP 561 marker for static type checkers
-│       ├── main.py                             # CLI entrypoint (FastMCP runner with stdio, http, sse, auth flags)
+│       ├── main.py                             # CLI entrypoint (FastMCP runner with stdio, http, sse)
 │       ├── core/
 │       │   ├── __init__.py
 │       │   └── config.py                       # pydantic-settings Settings model & singleton
 │       ├── domain/
 │       │   ├── __init__.py
-│       │   ├── exceptions.py                   # Typed domain error hierarchy (ParidhiError, AuthConfigurationError)
+│       │   ├── exceptions.py                   # Typed domain error hierarchy (ParidhiError)
 │       │   ├── models.py                       # Coordinates, CircularBound, Place, DiscoverPOIsRequest
 │       │   └── ports.py                        # SpatialProvider Protocol (Port interface)
 │       ├── infrastructure/
 │       │   ├── __init__.py
 │       │   ├── factory.py                      # SpatialProvider dependency-injection factory
 │       │   ├── mock.py                         # MockSpatialProvider for offline tests and fixture data
-│       │   ├── auth/
-│       │   │   ├── __init__.py
-│       │   │   └── factory.py                  # FastMCP OAuth 2.1 provider factory (Google, GitHub, OIDC)
 │       │   └── google/
 │       │       ├── __init__.py
 │       │       ├── adapter.py                  # GoogleSpatialAdapter (Geocoding & Places API New)
@@ -76,7 +72,6 @@ paridhi/
 │           └── server.py                       # FastMCP server definition & @server.tool handlers
 └── tests/
     ├── __init__.py
-    ├── test_auth.py                            # OAuth provider factory & authentication integration tests
     ├── test_config.py                          # Configuration parsing & validation tests
     ├── test_domain_models.py                   # Domain schemas, clamping, and table formatting tests
     ├── test_google_adapter.py                  # Google adapter unit tests with mocked httpx transport
@@ -89,11 +84,12 @@ paridhi/
 ## 4. Component Responsibilities & Contracts
 
 ### 4.1. Presentation Layer (`src/paridhi/presentation/server.py`)
-- Instantiates `FastMCP(name=..., instructions=..., auth=auth_provider)`.
-- Injects `SpatialProvider` and optional `AuthProvider` via `create_server(settings, provider, auth)`.
+- Instantiates `FastMCP(name=..., instructions=...)`.
+- Injects `SpatialProvider` via `create_server(settings, provider)`.
 - Implements tool handlers:
   - `ping() -> HealthCheckResponse`
   - `discover_pois(query, location, latitude, longitude, radius_meters, limit) -> str`
+- Implements custom informational landing route `GET /`.
 - Translates domain exceptions into human-friendly Markdown error notices (`⚠️`, `ℹ️`) instead of bubbling raw unhandled exceptions.
 
 ### 4.2. Domain Layer (`src/paridhi/domain/`)
@@ -112,7 +108,6 @@ paridhi/
   - `DiscoverPOIsRequest`: Validates input arguments, ensures either `location` or coords are passed, clamps radius to `[100m, 50000m]`.
 - **`exceptions.py`**:
   - `ParidhiError` (base)
-  - `AuthConfigurationError` (raised when OAuth IdP configuration is missing/invalid)
   - `GeocodingFailedError`
   - `ZeroPlacesFoundError`
   - `ProviderAuthenticationError`
@@ -123,13 +118,6 @@ paridhi/
 
 ### 4.3. Infrastructure Layer (`src/paridhi/infrastructure/`)
 - **`factory.py`**: Selects spatial provider implementation based on `settings.spatial_provider`.
-- **`auth/factory.py`**:
-  - `get_auth_provider(settings)` returns configured `fastmcp.server.auth.AuthProvider`.
-  - Supports `GoogleProvider` for Google OAuth 2.0 Web Application credentials.
-  - Supports `GitHubProvider` for GitHub OAuth applications.
-  - Supports `OIDCProxy` for any generic OpenID Connect discovery provider (Keycloak, Auth0, Okta, Authentik).
-  - Automatically resolves / derives internal JWT signing keys.
-  - Implements RFC 7591 Dynamic Client Registration (DCR) via `/register` for clients like Gemini Spark.
 - **`google/adapter.py`**:
   - `GoogleSpatialAdapter` connects to Google Geocoding API and Google Places API (New) Text Search (`places.googleapis.com/v1/places:searchText`).
   - Explicit `X-Goog-FieldMask` header ensures lean data transfer.
@@ -139,12 +127,7 @@ paridhi/
 
 ### 4.4. Configuration Layer (`src/paridhi/core/config.py`)
 - Loads settings from environment variables prefixed with `PARIDHI_` (or `.env` file).
-- Supports standard aliases:
-  - Geospatial: `GOOGLE_MAPS_API_KEY` / `GOOGLE_API_KEY`.
-  - Google OAuth: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`.
-  - GitHub OAuth: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`.
-  - Generic OIDC: `OIDC_CONFIG_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`.
-  - Security: `JWT_SIGNING_KEY` / `PARIDHI_JWT_SIGNING_KEY`.
+- Supports standard aliases for `GOOGLE_MAPS_API_KEY` / `GOOGLE_API_KEY`.
 - Provides caching via `@lru_cache` in `get_settings()`.
 
 ---
@@ -179,18 +162,6 @@ paridhi/
 5. Add unit tests for the new adapter using mocked HTTP responses.
 6. **Documentation Sync (Mandatory)**: Document the new provider options in `README.md` and `AGENTS.md`.
 
-### SOP 3: Configuring or Adding an OAuth Identity Provider (IdP)
-1. **Google IdP Integration (Default)**:
-   - In Google Cloud Console, create an OAuth 2.0 Client ID (Application type: *Web application*).
-   - Set Authorized redirect URIs: `http://localhost:8000/auth/callback` (or your deployment URL).
-   - Populate `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `.env`.
-   - Enable via `PARIDHI_AUTH_ENABLED=true` (or CLI flag `--auth`).
-2. **Switching to Another IdP (e.g. GitHub, Keycloak, Auth0, Okta)**:
-   - Set `PARIDHI_AUTH_PROVIDER=github` with `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`.
-   - Or set `PARIDHI_AUTH_PROVIDER=oidc` with `OIDC_CONFIG_URL`, `OIDC_CLIENT_ID`, and `OIDC_CLIENT_SECRET`.
-   - Update `get_auth_provider()` in `src/paridhi/infrastructure/auth/factory.py` if custom IdP parameters or transformations are required.
-3. **Documentation Sync (Mandatory)**: Document any new IdP configurations in `README.md` and `AGENTS.md`.
-
 ---
 
 ## 7. Verification & Quality Commands
@@ -198,7 +169,7 @@ paridhi/
 Always execute the complete verification pipeline before finishing any task:
 
 ```bash
-# 1. Run test suite (including docs sync and auth tests)
+# 1. Run test suite (including docs sync test)
 uv run pytest
 
 # 2. Check code formatting and linting

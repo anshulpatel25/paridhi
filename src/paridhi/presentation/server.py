@@ -3,7 +3,6 @@
 import logging
 
 from fastmcp import FastMCP
-from fastmcp.server.auth import AuthProvider
 from pydantic import ValidationError as PydanticValidationError
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -24,7 +23,6 @@ from paridhi.domain.models import (
     format_places_table,
 )
 from paridhi.domain.ports import SpatialProvider
-from paridhi.infrastructure.auth import get_auth_provider
 from paridhi.infrastructure.factory import get_spatial_provider
 
 logger = logging.getLogger("paridhi.server")
@@ -33,17 +31,14 @@ logger = logging.getLogger("paridhi.server")
 def create_server(
     settings: Settings | None = None,
     provider: SpatialProvider | None = None,
-    auth: AuthProvider | None = None,
 ) -> FastMCP:
     """Create and configure the Paridhi FastMCP server instance.
 
-    Injects the SpatialProvider interface (Ports & Adapters pattern) and
-    optional FastMCP OAuth 2.1 AuthProvider to ensure presentation logic
-    remains fully decoupled from concrete geospatial and identity backends.
+    Injects the SpatialProvider interface (Ports & Adapters pattern) to ensure
+    presentation logic remains fully decoupled from concrete geospatial backends.
     """
     app_settings = settings or get_settings()
     spatial_provider = provider or get_spatial_provider(app_settings)
-    auth_provider = auth if auth is not None else get_auth_provider(app_settings)
 
     server = FastMCP(
         name=app_settings.server_name,
@@ -51,7 +46,6 @@ def create_server(
             "Paridhi is a geospatial MCP server for discovering and enriching local points "
             "of interest (POIs) within circular spatial bounds using Google Maps Platform."
         ),
-        auth=auth_provider,
     )
 
     @server.custom_route("/", methods=["GET"])
@@ -63,10 +57,6 @@ def create_server(
                 "version": app_settings.server_version,
                 "status": "operational",
                 "mcp_endpoint": app_settings.path or "/mcp",
-                "oauth_enabled": app_settings.auth_enabled,
-                "oauth_metadata": (
-                    "/.well-known/oauth-authorization-server" if app_settings.auth_enabled else None
-                ),
             }
         )
 
