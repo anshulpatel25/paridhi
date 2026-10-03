@@ -41,7 +41,9 @@
 
 ```text
 paridhi/
+├── .dockerignore                               # Files excluded from Docker container builds
 ├── .env.example                                # Template for configuration & API keys
+├── Dockerfile                                  # Production multi-stage OCI container image definition
 ├── pyproject.toml                              # Packaging, dependencies, and tool settings
 ├── uv.lock                                     # Deterministic lockfile managed by uv
 ├── README.md                                   # User documentation with GitHub-rendered Mermaid diagrams
@@ -178,4 +180,7 @@ uv run ruff format --check .
 
 # 3. Strict type analysis
 uv run mypy src tests
+
+# 4. Container build verification (when modifying Dockerfile or packaging)
+docker build -t paridhi .
 ```

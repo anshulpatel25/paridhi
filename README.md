@@ -170,9 +170,11 @@ sequenceDiagram
 
 ```text
 paridhi/
+├── .dockerignore                               # Files excluded from Docker container builds
 ├── .env.example                                # Environment configuration template
 ├── .gitignore                                  # Git ignore rules
 ├── .python-version                             # Python runtime pinned (3.12)
+├── Dockerfile                                  # Production multi-stage OCI container image definition
 ├── pyproject.toml                              # Dependencies, packaging & tool configs
 ├── uv.lock                                     # Deterministic dependency lockfile
 ├── README.md                                   # User documentation (this file)
@@ -294,6 +296,49 @@ To configure in **Claude Desktop** (`claude_desktop_config.json`) or **Antigravi
     }
   }
 }
+```
+
+### 3. Docker Container (Production Deployment)
+
+Paridhi includes a multi-stage, rootless Dockerfile leveraging `uv` layer caching, healthcheck probe, and OCI standard metadata.
+
+#### Build the image:
+```bash
+docker build -t paridhi:latest .
+```
+
+#### Run the container:
+```bash
+docker run -d \
+  --name paridhi \
+  -p 8000:8000 \
+  -e GOOGLE_MAPS_API_KEY="AIzaSyYourActualGoogleMapsApiKey" \
+  -e PARIDHI_SPATIAL_PROVIDER="google" \
+  paridhi:latest
+```
+
+#### Verify health:
+The container includes a native Docker `HEALTHCHECK` querying the lightweight `GET /` operational route:
+```bash
+curl -f http://localhost:8000/
+# {"status":"operational","service":"Paridhi","version":"0.1.0",...}
+```
+
+#### Docker Compose Example:
+```yaml
+services:
+  paridhi:
+    build: .
+    image: paridhi:latest
+    ports:
+      - "8000:8000"
+    environment:
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
+      - PARIDHI_SPATIAL_PROVIDER=google
+      - PARIDHI_TRANSPORT=http
+      - PARIDHI_HOST=0.0.0.0
+      - PARIDHI_PORT=8000
+    restart: unless-stopped
 ```
 
 ---
