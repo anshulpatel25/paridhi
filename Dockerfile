@@ -3,7 +3,7 @@
 # ==============================================================================
 # Stage 1: Build virtual environment with uv
 # ==============================================================================
-FROM python:3.12-slim-bookworm AS builder
+FROM python:3.14-slim-bookworm AS builder
 
 # Install uv from official Astral binary
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
@@ -33,7 +33,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # ==============================================================================
 # Stage 2: Minimal runtime image
 # ==============================================================================
-FROM python:3.12-slim-bookworm AS runtime
+FROM python:3.14-slim-bookworm AS runtime
 
 # Build argument for application version
 ARG VERSION=0.1.0
