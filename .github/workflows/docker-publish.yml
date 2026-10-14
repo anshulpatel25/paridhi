@@ -108,7 +108,7 @@ jobs:
       # Stage 3: Build Local ARM64 Image for Scanning & Testing
       # ========================================================================
       - name: Set up QEMU for multi-platform support
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
         with:
           platforms: linux/arm64
 
