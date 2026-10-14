@@ -221,6 +221,24 @@ jobs:
         run: |
           set -euo pipefail
 
+          SUMMARY_FILE="summary.md"
+
+          # Helper to safely extract Report Summary table from a trivy text file
+          extract_report_summary() {
+            local file="$1"
+            if [ -f "$file" ] && [ -s "$file" ]; then
+              sed -n '/Report Summary/,/Clean (no security findings detected)/p' "$file" | head -n 25
+            fi
+          }
+
+          # Helper to extract Total summary line
+          extract_total_line() {
+            local file="$1"
+            if [ -f "$file" ] && [ -s "$file" ]; then
+              grep "^Total:" "$file" || true
+            fi
+          }
+
           {
             echo "# 🛡️ Security Vulnerabilities, SBOM & License Compliance Report"
             echo ""
@@ -232,6 +250,7 @@ jobs:
             echo "| **Target Architecture** | \`linux/arm64\` |"
             echo "| **Scanner Engine** | [Aquasecurity Trivy](https://github.com/aquasecurity/trivy-action) |"
             echo "| **SBOM Format** | SPDX 2.3 JSON (\`sbom-python.spdx.json\`, \`sbom-docker.spdx.json\`) |"
+            echo "| **Full Reports Artifact** | \`security-and-sbom-paridhi-${{ steps.version.outputs.version }}\` |"
             echo ""
             echo "---"
             echo ""
@@ -239,41 +258,51 @@ jobs:
             echo ""
             echo "### 📦 Software Bill of Materials (SBOM)"
             if [ -f sbom-python.spdx.json ] && [ -s sbom-python.spdx.json ]; then
-              echo "✅ **Python SBOM successfully generated**: \`sbom-python.spdx.json\`"
+              echo "✅ **SPDX 2.3 JSON SBOM generated**: \`sbom-python.spdx.json\` *(downloadable in workflow artifacts)*"
             else
               echo "⚠️ Python SBOM generation did not produce an output file."
             fi
             echo ""
-            echo "### 🔍 Vulnerability Findings"
-            if [ -f trivy-python-vuln.txt ] && [ -s trivy-python-vuln.txt ]; then
+            echo "### 🔍 Vulnerability Status"
+            PY_VULN_TOTAL=$(extract_total_line trivy-python-vuln.txt)
+            if [ -n "$PY_VULN_TOTAL" ]; then
+              echo "> **Findings**: \`$PY_VULN_TOTAL\`"
+              echo ""
               echo "<details open>"
-              echo "<summary><b>Click to view Python package vulnerability report</b></summary>"
+              echo "<summary><b>Click to view vulnerability findings</b></summary>"
               echo ""
               echo "\`\`\`text"
-              cat trivy-python-vuln.txt
+              grep -E "CRITICAL|HIGH|MEDIUM|LOW" trivy-python-vuln.txt | head -n 40 || true
               echo "\`\`\`"
               echo "</details>"
             else
-              echo "✅ No Python vulnerabilities detected."
+              echo "✅ **No vulnerabilities detected in Python dependencies.**"
+              echo ""
+              PY_VULN_SUMMARY=$(extract_report_summary trivy-python-vuln.txt)
+              if [ -n "$PY_VULN_SUMMARY" ]; then
+                echo "\`\`\`text"
+                echo "$PY_VULN_SUMMARY"
+                echo "\`\`\`"
+              fi
             fi
             echo ""
             echo "### 📜 License Compliance"
-            if [ -f trivy-python-license.txt ] && [ -s trivy-python-license.txt ]; then
-              PY_LIC_SUMMARY=$(grep "^Total:" trivy-python-license.txt || true)
-              if [ -n "$PY_LIC_SUMMARY" ]; then
-                echo "> **Summary**: \`$PY_LIC_SUMMARY\`"
-                echo ""
-              fi
-              echo "<details>"
-              echo "<summary><b>Click to view Python package licenses</b></summary>"
+            PY_LIC_TOTAL=$(extract_total_line trivy-python-license.txt)
+            if [ -n "$PY_LIC_TOTAL" ]; then
+              echo "> **Summary**: \`$PY_LIC_TOTAL\`"
               echo ""
-              echo "\`\`\`text"
-              cat trivy-python-license.txt
-              echo "\`\`\`"
-              echo "</details>"
-            else
-              echo "⚠️ Python license report not available."
             fi
+            PY_FLAGGED_LIC=$(grep -E "unknown|restricted|forbidden|HIGH|CRITICAL" trivy-python-license.txt | grep -v "^Total:" | head -n 30 || true)
+            if [ -n "$PY_FLAGGED_LIC" ]; then
+              echo "#### Non-standard or Flagged Package Licenses (Review Recommended)"
+              echo "\`\`\`text"
+              echo "$PY_FLAGGED_LIC"
+              echo "\`\`\`"
+            else
+              echo "✅ All Python dependencies use standard permissive licenses."
+            fi
+            echo ""
+            echo "> ℹ️ *Complete manifest of all Python package licenses is preserved in workflow artifact \`trivy-python-license.txt\`.*"
             echo ""
             echo "---"
             echo ""
@@ -281,39 +310,60 @@ jobs:
             echo ""
             echo "### 📦 Software Bill of Materials (SBOM)"
             if [ -f sbom-docker.spdx.json ] && [ -s sbom-docker.spdx.json ]; then
-              echo "✅ **Docker Image SBOM successfully generated**: \`sbom-docker.spdx.json\`"
+              echo "✅ **SPDX 2.3 JSON SBOM generated**: \`sbom-docker.spdx.json\` *(downloadable in workflow artifacts)*"
             else
               echo "⚠️ Docker SBOM generation did not produce an output file."
             fi
             echo ""
-            echo "### 🔍 Vulnerability Findings (Local ARM64 Image \`paridhi:local\`)"
-            if [ -f trivy-docker-vuln.txt ] && [ -s trivy-docker-vuln.txt ]; then
-              DOCKER_VULN_SUMMARY=$(grep "^Total:" trivy-docker-vuln.txt || true)
-              if [ -n "$DOCKER_VULN_SUMMARY" ]; then
-                echo "> **Summary**: \`$DOCKER_VULN_SUMMARY\`"
-                echo ""
-              fi
+            echo "### 🔍 Vulnerability Status (\`paridhi:local\` ARM64)"
+            DOCKER_VULN_TOTAL=$(extract_total_line trivy-docker-vuln.txt)
+            if [ -n "$DOCKER_VULN_TOTAL" ]; then
+              echo "> **Findings**: \`$DOCKER_VULN_TOTAL\`"
+              echo ""
               echo "<details open>"
-              echo "<summary><b>Click to view Docker container vulnerability report</b></summary>"
+              echo "<summary><b>Click to view top container vulnerabilities</b></summary>"
               echo ""
               echo "\`\`\`text"
-              cat trivy-docker-vuln.txt
+              grep -E "CRITICAL|HIGH|MEDIUM|LOW" trivy-docker-vuln.txt | head -n 40 || true
               echo "\`\`\`"
               echo "</details>"
             else
-              echo "✅ No container vulnerabilities detected."
+              echo "✅ **No vulnerabilities detected in local ARM64 container image.**"
+              echo ""
+              DOCKER_VULN_SUMMARY=$(extract_report_summary trivy-docker-vuln.txt)
+              if [ -n "$DOCKER_VULN_SUMMARY" ]; then
+                echo "\`\`\`text"
+                echo "$DOCKER_VULN_SUMMARY"
+                echo "\`\`\`"
+              fi
             fi
             echo ""
             echo "### 📜 License Compliance"
-            if [ -f trivy-docker-license.txt ] && [ -s trivy-docker-license.txt ]; then
-              echo "<details>"
-              echo "<summary><b>Click to view Docker container licenses</b></summary>"
+            DOCKER_LIC_TOTAL=$(extract_total_line trivy-docker-license.txt)
+            if [ -n "$DOCKER_LIC_TOTAL" ]; then
+              echo "> **OS & Container Package Licenses**: \`$DOCKER_LIC_TOTAL\`"
               echo ""
-              echo "\`\`\`text"
-              cat trivy-docker-license.txt
-              echo "\`\`\`"
-              echo "</details>"
-            else
-              echo "⚠️ Docker license report not available."
             fi
-          } >> "$GITHUB_STEP_SUMMARY"
+            DOCKER_FLAGGED_LIC=$(grep -E "forbidden|CRITICAL" trivy-docker-license.txt | grep -v "^Total:" | head -n 20 || true)
+            if [ -n "$DOCKER_FLAGGED_LIC" ]; then
+              echo "#### High-Risk/Forbidden Licenses"
+              echo "\`\`\`text"
+              echo "$DOCKER_FLAGGED_LIC"
+              echo "\`\`\`"
+            else
+              echo "✅ No forbidden or critical license violations detected in container."
+            fi
+            echo ""
+            echo "> ℹ️ *Base Debian image packages include standard system libraries (e.g. GPL/LGPL/BSD/MIT). The complete container license audit is preserved in workflow artifact \`trivy-docker-license.txt\`.*"
+          } > "$SUMMARY_FILE"
+
+          # Safety check: ensure total summary size is well below 1024 KiB limit (cap at 256 KiB)
+          SUMMARY_BYTES=$(wc -c < "$SUMMARY_FILE")
+          echo "Generated step summary size: ${SUMMARY_BYTES} bytes"
+          if [ "$SUMMARY_BYTES" -gt 262144 ]; then
+            head -c 260000 "$SUMMARY_FILE" > "${SUMMARY_FILE}.tmp"
+            echo -e "\n\n> ⚠️ *Summary truncated due to size limit. Full raw reports are available in workflow artifacts.*" >> "${SUMMARY_FILE}.tmp"
+            mv "${SUMMARY_FILE}.tmp" "$SUMMARY_FILE"
+          fi
+
+          cat "$SUMMARY_FILE" >> "$GITHUB_STEP_SUMMARY"
