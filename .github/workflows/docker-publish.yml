@@ -46,7 +46,7 @@ jobs:
           echo "version=$RAW_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Checkout repository at release tag
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ steps.version.outputs.tag }}
 
