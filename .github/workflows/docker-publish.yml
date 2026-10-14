@@ -81,13 +81,8 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.licenses=MIT
 
-<<<<<<< Updated upstream
       - name: Build and Push Docker image
         uses: docker/build-push-action@v7
-=======
-      - name: Build and Push Docker image (linux/arm64)
-        uses: docker/build-push-action@v6
->>>>>>> Stashed changes
         with:
           context: .
           file: ./Dockerfile
