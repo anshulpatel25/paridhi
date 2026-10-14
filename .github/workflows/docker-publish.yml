@@ -54,7 +54,7 @@ jobs:
       # Stage 1: Python Environment Setup & Dependency Installation
       # ========================================================================
       - name: Install uv package manager
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
