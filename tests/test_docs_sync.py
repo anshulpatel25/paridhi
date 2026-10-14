@@ -81,3 +81,44 @@ def test_documentation_sync_policy_documented() -> None:
     assert "README.md" in agents_text, (
         "AGENTS.md should reference README.md for synchronization mandate"
     )
+
+
+def test_license_and_release_documentation_exist() -> None:
+    """Ensure LICENSE and RELEASE.md exist and contain required content."""
+    license_path = PROJECT_ROOT / "LICENSE"
+    release_path = PROJECT_ROOT / "RELEASE.md"
+
+    assert license_path.exists(), f"Missing {license_path}"
+    assert release_path.exists(), f"Missing {release_path}"
+
+    license_text = license_path.read_text(encoding="utf-8")
+    release_text = release_path.read_text(encoding="utf-8")
+
+    assert "MIT License" in license_text
+    assert "0.1.0" in release_text
+    assert "ghcr.io" in release_text
+
+
+def test_github_workflows_configuration() -> None:
+    """Ensure CI and Docker workflows exist with correct trigger specifications."""
+    workflows_dir = PROJECT_ROOT / ".github" / "workflows"
+    ci_workflow = workflows_dir / "ci.yml"
+    docker_workflow = workflows_dir / "docker-publish.yml"
+
+    assert ci_workflow.exists(), f"Missing {ci_workflow}"
+    assert docker_workflow.exists(), f"Missing {docker_workflow}"
+
+    ci_content = ci_workflow.read_text(encoding="utf-8")
+    docker_content = docker_workflow.read_text(encoding="utf-8")
+
+    # CI workflow checks
+    assert "create-draft-release" in ci_content
+    assert "ruff format" in ci_content
+    assert "0.1.0" in ci_content
+
+    # Docker publish workflow checks (strictly tags, not main branch)
+    assert "tags:" in docker_content
+    assert "branches:" not in docker_content
+    assert "PARIDHI_SERVER_VERSION" in PROJECT_ROOT.joinpath("Dockerfile").read_text(
+        encoding="utf-8"
+    )

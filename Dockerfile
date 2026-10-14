@@ -22,8 +22,8 @@ COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-project
 
-# Copy application source and documentation required by pyproject.toml
-COPY README.md ./
+# Copy application source, license, and documentation required by pyproject.toml
+COPY README.md LICENSE ./
 COPY src/ ./src/
 
 # Install the application itself
@@ -35,12 +35,16 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # ==============================================================================
 FROM python:3.12-slim-bookworm AS runtime
 
+# Build argument for application version
+ARG VERSION=0.1.0
+
 # Metadata labels
 LABEL maintainer="Anshul Patel <er.anshul.patel@gmail.com>"
 LABEL description="Paridhi FastMCP server for discovering and enriching points of interest within circular spatial bounds"
 LABEL org.opencontainers.image.title="Paridhi"
 LABEL org.opencontainers.image.description="FastMCP server for discovering and enriching points of interest within circular spatial bounds"
 LABEL org.opencontainers.image.authors="Anshul Patel <er.anshul.patel@gmail.com>"
+LABEL org.opencontainers.image.version="${VERSION}"
 
 # Install curl for HEALTHCHECK and ca-certificates for upstream HTTPS APIs
 RUN apt-get update && \
@@ -63,7 +67,8 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
     PARIDHI_TRANSPORT=http \
     PARIDHI_HOST=0.0.0.0 \
-    PARIDHI_PORT=8000
+    PARIDHI_PORT=8000 \
+    PARIDHI_SERVER_VERSION="${VERSION}"
 
 # Expose network transport port
 EXPOSE 8000

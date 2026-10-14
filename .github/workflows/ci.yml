@@ -1,0 +1,229 @@
+name: CI & Release Pipeline
+
+# Controls when the workflow will run
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+# Concurrency control: cancel in-progress runs for pull requests,
+# but queue/complete runs on the main branch to guarantee clean release creation.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+# Default least-privilege permissions
+permissions:
+  contents: read
+
+jobs:
+  # ============================================================================
+  # Job 1: Auto-Format, Lint, and Static Type Analysis
+  # ============================================================================
+  format-and-lint:
+    name: Code Formatting & Linting
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required to push automatic formatting corrections to main
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Use RELEASE_TOKEN PAT if configured by admin, otherwise default GITHUB_TOKEN
+          token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          fetch-depth: 1
+
+      - name: Install uv package manager
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python runtime
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: ".python-version"
+
+      - name: Install dependencies with uv
+        run: |
+          echo "Syncing all project and development dependencies..."
+          uv sync --all-groups
+
+      - name: Auto-correct code formatting with Ruff
+        run: |
+          echo "Running ruff format..."
+          uv run ruff format .
+          echo "Running ruff check with autofix..."
+          uv run ruff check --fix .
+
+      - name: Commit and push formatting corrections (main branch only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Formatting inconsistencies detected. Committing and pushing fixes..."
+            git config --local user.email "github-actions[bot]@users.noreply.github.com"
+            git config --local user.name "github-actions[bot]"
+            git commit -am "style: auto-correct code formatting with ruff [skip ci]"
+            git push
+          else
+            echo "Code formatting is already clean. No changes to commit."
+          fi
+
+      - name: Verify Ruff lint rules
+        run: |
+          echo "Verifying all lint rules pass cleanly..."
+          uv run ruff check .
+
+      - name: Verify static types with mypy (strict mode)
+        run: |
+          echo "Verifying strict static typing across source and tests..."
+          uv run mypy src tests
+
+  # ============================================================================
+  # Job 2: Automated Test Suite Execution
+  # ============================================================================
+  test:
+    name: Test Suite & Doc Sync
+    needs: format-and-lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv package manager
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python runtime
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: ".python-version"
+
+      - name: Install dependencies with uv
+        run: uv sync --all-groups
+
+      - name: Run Pytest test suite
+        run: |
+          echo "Executing unit, integration, and documentation synchronization tests..."
+          uv run pytest -v
+
+  # ============================================================================
+  # Job 3: Semantic Versioning, Tag Creation, and GitHub Draft Release
+  # Only executes if all tests pass, and strictly on the main branch (not PRs)
+  # ============================================================================
+  create-draft-release:
+    name: Create Draft Release & Tag
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required to create tags and draft releases
+
+    steps:
+      - name: Checkout repository with full git history and tags
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Calculate Next Semantic Version
+        id: semver
+        run: |
+          set -euo pipefail
+
+          # Fetch remote tags to ensure local clone has complete release history
+          git fetch --tags --force || true
+
+          # Find highest existing semantic tag (format: vX.Y.Z)
+          LATEST_TAG=$(git tag -l "v[0-9]*.[0-9]*.[0-9]*" --sort=-v:refname | head -n 1 || true)
+
+          if [ -z "$LATEST_TAG" ]; then
+            # Initial bootstrap version
+            NEXT_VERSION="0.1.0"
+            NEXT_TAG="v0.1.0"
+            echo "No semantic tags found. Initializing repository version at $NEXT_TAG."
+          else
+            echo "Highest existing tag found: $LATEST_TAG"
+
+            # Check if current HEAD commit already carries this tag
+            HEAD_COMMIT=$(git rev-parse HEAD)
+            TAG_COMMIT=$(git rev-list -n 1 "$LATEST_TAG" || true)
+
+            if [ "$HEAD_COMMIT" = "$TAG_COMMIT" ]; then
+              echo "Current commit ($HEAD_COMMIT) already points to $LATEST_TAG. Skipping duplicate tag/release creation."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            # Parse semver components: MAJOR.MINOR.PATCH
+            CLEAN_VERSION="${LATEST_TAG#v}"
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$CLEAN_VERSION"
+
+            # Inspect commit messages since last tag to determine bump type
+            COMMITS=$(git log "${LATEST_TAG}..HEAD" --oneline || true)
+            echo "Commits since $LATEST_TAG:"
+            echo "$COMMITS"
+
+            # Determine semver bump based on conventional commits
+            if echo "$COMMITS" | grep -Eq "^[a-f0-9]+ (feat!|fix!|refactor!|breaking change:|BREAKING CHANGE:)"; then
+              echo "Breaking changes detected. Incrementing MAJOR version."
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+            elif echo "$COMMITS" | grep -Eq "^[a-f0-9]+ feat(\(.*\))?:"; then
+              echo "New features detected. Incrementing MINOR version."
+              MINOR=$((MINOR + 1))
+              PATCH=0
+            else
+              echo "Fixes, documentation, or chores detected. Incrementing PATCH version."
+              PATCH=$((PATCH + 1))
+            fi
+
+            NEXT_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+            NEXT_TAG="v${NEXT_VERSION}"
+          fi
+
+          echo "Target Release Version: $NEXT_VERSION ($NEXT_TAG)"
+          echo "version=$NEXT_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$NEXT_TAG" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push Git release tag
+        if: steps.semver.outputs.skip != 'true'
+        run: |
+          TARGET_TAG="${{ steps.semver.outputs.tag }}"
+          TARGET_VERSION="${{ steps.semver.outputs.version }}"
+
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+          echo "Creating annotated tag $TARGET_TAG..."
+          git tag -a "$TARGET_TAG" -m "Release $TARGET_TAG (v${TARGET_VERSION})"
+          
+          echo "Pushing tag $TARGET_TAG to origin..."
+          git push origin "$TARGET_TAG"
+
+      - name: Create GitHub Draft Release
+        if: steps.semver.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TARGET_TAG="${{ steps.semver.outputs.tag }}"
+
+          echo "Creating GitHub Draft Release for $TARGET_TAG..."
+          gh release create "$TARGET_TAG" \
+            --draft \
+            --title "Release $TARGET_TAG" \
+            --generate-notes
+          
+          echo "Draft release created successfully."

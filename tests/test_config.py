@@ -18,3 +18,10 @@ def test_settings_singleton() -> None:
     s1 = get_settings()
     s2 = get_settings()
     assert s1 is s2
+
+
+def test_settings_server_version_override() -> None:
+    """Verify server_version can be supplied as input."""
+    custom_version = "1.2.3"
+    settings = Settings(server_version=custom_version, _env_file=None)  # type: ignore[call-arg]
+    assert settings.server_version == custom_version

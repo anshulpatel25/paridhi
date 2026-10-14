@@ -24,6 +24,19 @@ def parse_args() -> argparse.Namespace:
         description="Paridhi MCP server: Discover and enrich POIs within circular spatial bounds.",
     )
     parser.add_argument(
+        "--version",
+        "-v",
+        action="version",
+        version=f"%(prog)s {settings.server_version}",
+        help="Show application version and exit",
+    )
+    parser.add_argument(
+        "--server-version",
+        type=str,
+        default=settings.server_version,
+        help=f"Paridhi application version (default: {settings.server_version})",
+    )
+    parser.add_argument(
         "--transport",
         type=str,
         choices=["stdio", "http", "streamable-http", "sse"],
@@ -61,6 +74,8 @@ def main() -> None:
     """Main CLI execution handler."""
     args = parse_args()
     settings = get_settings()
+    if args.server_version:
+        settings.server_version = args.server_version
 
     setup_logging(level=settings.log_level, debug=args.debug)
     logger = logging.getLogger("paridhi.main")

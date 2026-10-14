@@ -4,7 +4,7 @@
 [![FastMCP](https://img.shields.io/badge/FastMCP-4.0+-brightgreen.svg)](https://github.com/jlowin/fastmcp)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Type Checked](https://img.shields.io/badge/mypy-strict-blue.svg)](https://mypy-lang.org/)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **Paridhi** (*परिधि* — Sanskrit for *perimeter*, *circumference*, or *boundary*) is a [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server built with Python and [FastMCP](https://github.com/jlowin/fastmcp). It enables AI agents to discover, filter, and enrich local points of interest (POIs) within circular spatial bounds using Google Maps Platform (Geocoding API & Places API New).
 
@@ -113,7 +113,7 @@ sequenceDiagram
     Domain->>Domain: clamp_radius(50.0) -> Clamped to min 100.0m
     Domain-->>FastMCP: Validated (effective radius: 100m)
     
-    Note over FastMCP: Coords provided; Geocoding step skipped
+    Note over FastMCP: Coords provided, Geocoding step skipped
     
     FastMCP->>Adapter: search_places("points of interest", center, radius=100)
     Adapter->>PlacesAPI: POST /v1/places:searchText
@@ -177,6 +177,8 @@ paridhi/
 ├── Dockerfile                                  # Production multi-stage OCI container image definition
 ├── pyproject.toml                              # Dependencies, packaging & tool configs
 ├── uv.lock                                     # Deterministic dependency lockfile
+├── LICENSE                                     # MIT License definition
+├── RELEASE.md                                  # Release lifecycle & CI/CD deployment guide
 ├── README.md                                   # User documentation (this file)
 ├── AGENTS.md                                   # AI Agent operational contracts & SOPs
 ├── src/
@@ -304,8 +306,14 @@ Paridhi includes a multi-stage, rootless Dockerfile leveraging `uv` layer cachin
 
 #### Build the image:
 ```bash
+# Build with default version (0.1.0)
 docker build -t paridhi:latest .
+
+# Build with an explicit version input
+docker build --build-arg VERSION=0.1.0 -t paridhi:0.1.0 .
 ```
+
+For complete CI/CD release lifecycle and automated GitHub Container Registry workflows, refer to [`RELEASE.md`](./RELEASE.md).
 
 #### Run the container:
 ```bash
@@ -423,4 +431,4 @@ uv run mypy src tests
 
 ## License
 
-[Apache-2.0](./LICENSE)
+[MIT](./LICENSE)

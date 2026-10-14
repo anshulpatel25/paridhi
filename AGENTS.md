@@ -46,6 +46,8 @@ paridhi/
 ├── Dockerfile                                  # Production multi-stage OCI container image definition
 ├── pyproject.toml                              # Packaging, dependencies, and tool settings
 ├── uv.lock                                     # Deterministic lockfile managed by uv
+├── LICENSE                                     # MIT License definition
+├── RELEASE.md                                  # Release lifecycle & CI/CD deployment guide
 ├── README.md                                   # User documentation with GitHub-rendered Mermaid diagrams
 ├── AGENTS.md                                   # Agent operational specification (this file)
 ├── src/
@@ -163,6 +165,13 @@ paridhi/
 4. Update `get_spatial_provider()` in `src/paridhi/infrastructure/factory.py` to route the new provider name.
 5. Add unit tests for the new adapter using mocked HTTP responses.
 6. **Documentation Sync (Mandatory)**: Document the new provider options in `README.md` and `AGENTS.md`.
+
+### SOP 3: Releasing and Versioning Paridhi
+1. Review [`RELEASE.md`](./RELEASE.md) for full architecture and SemVer rules (starting at `0.1.0`).
+2. Ensure changes follow Conventional Commits (`feat:`, `fix:`, `BREAKING CHANGE:`) so automated SemVer calculation increments properly.
+3. Push commits to `main` branch: CI automatically auto-corrects format, verifies tests, bumps SemVer, creates the Git tag, and crafts a GitHub Draft release.
+4. Review and publish the draft release in GitHub Releases to finalize the release.
+5. The tag creation event automatically builds and publishes the versioned OCI image to GitHub Container Registry (`ghcr.io`).
 
 ---
 
