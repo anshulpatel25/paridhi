@@ -50,8 +50,8 @@ jobs:
         with:
           ref: ${{ steps.version.outputs.tag }}
 
-      - name: Set up QEMU for ARM64 emulation
-        uses: docker/setup-qemu-action@v3
+      - name: Set up QEMU for multi-platform support
+        uses: docker/setup-qemu-action@v4
         with:
           platforms: linux/arm64
 
