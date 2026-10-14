@@ -51,7 +51,7 @@ jobs:
           ref: ${{ steps.version.outputs.tag }}
 
       - name: Set up QEMU for multi-platform support
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
