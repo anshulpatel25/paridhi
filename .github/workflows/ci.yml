@@ -1,20 +1,19 @@
 name: CI & Release Pipeline
 
 # Controls when the workflow will run
+# Configured to run strictly on manual trigger
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:
+    inputs:
+      create_release:
+        description: "Draft a new release and tag if all tests pass"
+        type: boolean
+        default: true
 
-# Concurrency control: cancel in-progress runs for pull requests,
-# but queue/complete runs on the main branch to guarantee clean release creation.
+# Concurrency control: prevent duplicate overlapping manual runs on the same ref.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: false
 
 # Default least-privilege permissions
 permissions:
@@ -62,7 +61,7 @@ jobs:
           uv run ruff check --fix .
 
       - name: Commit and push formatting corrections (main branch only)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main'
         run: |
           if [ -n "$(git status --porcelain)" ]; then
             echo "Formatting inconsistencies detected. Committing and pushing fixes..."
@@ -124,7 +123,7 @@ jobs:
   create-draft-release:
     name: Create Draft Release & Tag
     needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && (inputs.create_release == true || inputs.create_release == null)
     runs-on: ubuntu-latest
     permissions:
       contents: write # Required to create tags and draft releases

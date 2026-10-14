@@ -169,7 +169,7 @@ paridhi/
 ### SOP 3: Releasing and Versioning Paridhi
 1. Review [`RELEASE.md`](./RELEASE.md) for full architecture and SemVer rules (starting at `0.1.0`).
 2. Ensure changes follow Conventional Commits (`feat:`, `fix:`, `BREAKING CHANGE:`) so automated SemVer calculation increments properly.
-3. Push commits to `main` branch: CI automatically auto-corrects format, verifies tests, bumps SemVer, creates the Git tag, and crafts a GitHub Draft release.
+3. Trigger the CI & Release Pipeline manually (`workflow_dispatch` in Actions tab or `gh workflow run ci.yml --ref main`): CI auto-corrects format, verifies tests, calculates SemVer, creates the Git tag, and crafts a GitHub Draft release.
 4. Review and publish the draft release in GitHub Releases to finalize the release.
 5. The tag creation event automatically builds and publishes the versioned OCI image to GitHub Container Registry (`ghcr.io`).
 

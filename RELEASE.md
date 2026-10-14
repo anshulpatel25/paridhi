@@ -11,7 +11,7 @@ Paridhi adopts a deterministic, two-phase CI/CD architecture powered by GitHub A
 ```mermaid
 flowchart TD
     subgraph Phase1["Phase 1: CI & Draft Release (ci.yml)"]
-        A["Push to main / PR"] --> B["Format & Autofix (Ruff)"]
+        A["Manual Trigger (workflow_dispatch)"] --> B["Format & Autofix (Ruff)"]
         B --> C["Strict Type Check (Mypy)"]
         C --> D["Automated Test Suite (Pytest)"]
         D -->|If Tests Pass & on main| E["Calculate SemVer (Starts at v0.1.0)"]
@@ -34,11 +34,12 @@ flowchart TD
 
 ### Phase 1: Continuous Integration & Draft Release (`.github/workflows/ci.yml`)
 
-This workflow runs on every `push` to `main`, every `pull_request` targeting `main`, and can also be triggered manually via `workflow_dispatch`.
+> [!NOTE]
+> **Manual Execution Policy**: This workflow runs **strictly on manual trigger (`workflow_dispatch`)** from the GitHub Actions web UI or via the GitHub CLI. It does not run on arbitrary push or pull request events.
 
 1. **Code Formatting & Autofix**:
    - Runs `uv run ruff format .` and `uv run ruff check --fix .`.
-   - On pushes to `main`, any auto-formatting changes are committed and pushed back automatically (`[skip ci]`).
+   - When executed on `main`, any auto-formatting changes are committed and pushed back automatically (`[skip ci]`).
 2. **Linting & Type Analysis**:
    - Verifies all lint rules with `uv run ruff check .`.
    - Enforces strict static typing across `src` and `tests` with `uv run mypy src tests`.
@@ -132,17 +133,21 @@ The version is surfaced through the health check tool `ping()` and the root info
 
 ## 4. Maintainer Release Workflow
 
-To publish a new release:
+To execute a release:
 
-1. **Commit and Push Changes**:
+1. **Commit and Push Changes to `main`**:
    ```bash
    git add .
    git commit -m "feat: add support for custom spatial filters"
    git push origin main
    ```
-2. **Automated CI & Draft Release**:
-   - GitHub Actions runs the `CI & Release Pipeline`.
-   - Tests execute, the next SemVer tag (e.g. `v0.2.0`) is pushed, and a GitHub Draft Release is drafted.
+2. **Trigger CI & Release Pipeline Manually**:
+   - In GitHub: Navigate to **Actions** $\rightarrow$ **CI & Release Pipeline** $\rightarrow$ Click **Run workflow** (select `main` branch, ensure `Draft a new release` is checked).
+   - Via GitHub CLI:
+     ```bash
+     gh workflow run ci.yml --ref main
+     ```
+   - Formatting is verified/corrected, tests execute, the next SemVer tag (e.g. `v0.2.0`) is pushed, and a GitHub Draft Release is drafted.
 3. **Review & Publish Draft Release**:
    - Navigate to **GitHub $\rightarrow$ Releases** (`https://github.com/<owner>/paridhi/releases`).
    - Open the latest draft release.

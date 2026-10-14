@@ -111,10 +111,12 @@ def test_github_workflows_configuration() -> None:
     ci_content = ci_workflow.read_text(encoding="utf-8")
     docker_content = docker_workflow.read_text(encoding="utf-8")
 
-    # CI workflow checks
+    # CI workflow checks (strictly manual trigger)
     assert "create-draft-release" in ci_content
     assert "ruff format" in ci_content
     assert "0.1.0" in ci_content
+    assert "workflow_dispatch:" in ci_content
+    assert "pull_request:" not in ci_content
 
     # Docker publish workflow checks (strictly tags, not main branch)
     assert "tags:" in docker_content
