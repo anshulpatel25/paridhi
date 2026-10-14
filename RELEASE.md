@@ -22,12 +22,12 @@ flowchart TD
     subgraph Phase2["Phase 2: Docker Build, Scan & Publish (docker-publish.yml)"]
         F -.->|Tag Push Event| H["Trigger on v*.*.* Tag (Never on main)"]
         H --> I["Extract Version (e.g. 0.1.0)"]
-        I --> J["Build Local ARM64 Image (--load paridhi:local)"]
-        J --> K["Trivy Vulnerability Scan on Local Image"]
-        K --> L["Trivy SBOM Generation on Local Image"]
-        L --> M["Upload SBOM Artifact"]
-        M -->|Scan & SBOM Complete| N["Build & Publish Actual Image to ghcr.io"]
-        N --> O["Publish Security Report to Run Summary"]
+        I --> J["Python Vulnerability, SBOM & License Audit (Trivy)"]
+        J --> K["Build Local ARM64 Image (--load paridhi:local)"]
+        K --> L["Docker Vulnerability, SBOM & License Audit (Trivy)"]
+        L --> M["Upload Security, SBOM & License Artifacts"]
+        M -->|All Audits & Builds Pass| N["Build & Publish Actual Image to ghcr.io"]
+        N --> O["Publish Security, SBOM & License Summary"]
     end
 ```
 
@@ -74,21 +74,28 @@ flowchart TD
    - Strips the leading `v` from the tag (e.g., `v0.1.0` $\rightarrow$ `0.1.0`).
    - Passes the version number into Docker build as `--build-arg VERSION=<version>`.
    - Sets the runtime environment variable `PARIDHI_SERVER_VERSION=<version>` and OCI image label `org.opencontainers.image.version=<version>`.
-3. **Local ARM64 Image Build for Analysis**:
+3. **Python Package Security, SBOM & License Audit**:
+   - Installs project dependencies via `uv sync --all-groups`.
+   - Invokes [`aquasecurity/trivy-action@master`](https://github.com/aquasecurity/trivy-action) to scan Python dependencies for known vulnerabilities (`CRITICAL,HIGH,MEDIUM,LOW`).
+   - Generates a Software Bill of Materials (SBOM) for Python packages in SPDX 2.3 JSON format (`sbom-python.spdx.json`).
+   - Audits open-source licenses for all installed Python packages (`trivy-python-license.txt`).
+4. **Local ARM64 Image Build for Pre-Publish Verification**:
+   - Sets up QEMU and Docker Buildx for `linux/arm64`.
    - Builds the ARM64 image locally with `--load` (`paridhi:local`).
-4. **Local Security Vulnerability Scanning & SBOM Generation**:
-   - Invokes [`aquasecurity/trivy-action@master`](https://github.com/aquasecurity/trivy-action) directly against the local container image (`paridhi:local`) for vulnerabilities across all severities (`CRITICAL,HIGH,MEDIUM,LOW`).
-   - Generates a Software Bill of Materials in SPDX 2.3 JSON format (`sbom.spdx.json`) from the local image.
-   - Uploads the generated SBOM as a workflow run artifact.
-5. **Build & Publish Actual Image to Container Registry**:
+5. **Container Security, SBOM & License Audit**:
+   - Invokes Trivy against the local container image (`paridhi:local`) for vulnerabilities.
+   - Generates a Software Bill of Materials (SBOM) for the container image in SPDX 2.3 JSON format (`sbom-docker.spdx.json`).
+   - Audits system and container package licenses (`trivy-docker-license.txt`).
+   - Uploads all SBOMs and vulnerability/license reports as workflow artifacts.
+6. **Build & Publish Actual Image to Container Registry**:
    - Authenticates against GitHub Container Registry (`ghcr.io`) using `GITHUB_TOKEN`.
    - Builds and publishes the verified **ARM64** image (`linux/arm64`) to `ghcr.io`, leveraging cached Buildx layers.
    - Publishes images tagged as:
      - `ghcr.io/<owner>/paridhi:<version>` (e.g. `0.1.0`)
      - `ghcr.io/<owner>/paridhi:<tag>` (e.g. `v0.1.0`)
      - `ghcr.io/<owner>/paridhi:latest`
-6. **GitHub Actions Run Summary**:
-   - Generates a Markdown security report directly in the GitHub Actions run summary (`$GITHUB_STEP_SUMMARY`), presenting build metadata, local scanning verification, SBOM status, and expandable vulnerability findings.
+7. **Comprehensive GitHub Actions Run Summary**:
+   - Generates an executive Markdown report directly in the GitHub Actions run summary (`$GITHUB_STEP_SUMMARY`), presenting build metadata, Python package vulnerability/SBOM/license reports, and container vulnerability/SBOM/license findings.
 
 ---
 
@@ -166,8 +173,8 @@ To execute a release:
    - Review release notes, edit descriptions if desired, and click **Publish release**.
 4. **Automatic Local Scan, Container Build & Publishing**:
    - The tag push triggers `Build and Publish Docker Image`.
-   - Builds the ARM64 container locally with `--load` (`paridhi:local`), runs Trivy vulnerability scanning, and generates the SPDX SBOM on the local image.
-   - Builds and publishes the verified ARM64 image to `ghcr.io`, leveraging cached Buildx layers, and publishes the security report to the GitHub Actions run summary.
+   - Runs Aquasecurity Trivy on Python dependencies and the local ARM64 container (`paridhi:local`), producing vulnerability reports, SPDX 2.3 JSON SBOMs (`sbom-python.spdx.json`, `sbom-docker.spdx.json`), and open-source license audits (`trivy-python-license.txt`, `trivy-docker-license.txt`).
+   - Builds and publishes the verified ARM64 image to `ghcr.io`, leveraging cached Buildx layers, and publishes the security and compliance report to the GitHub Actions run summary.
 
 ---
 

@@ -171,7 +171,7 @@ paridhi/
 2. Ensure changes follow Conventional Commits (`feat:`, `fix:`, `BREAKING CHANGE:`) so automated SemVer calculation increments properly.
 3. Trigger the CI & Release Pipeline manually (`workflow_dispatch` in Actions tab or `gh workflow run ci.yml --ref main`): CI auto-corrects format, verifies tests, calculates SemVer, creates the Git tag, and crafts a GitHub Draft release.
 4. Review and publish the draft release in GitHub Releases to finalize the release.
-5. The tag creation event automatically builds and publishes the ARM64 OCI image to GitHub Container Registry (`ghcr.io`), generates an SPDX SBOM, scans for vulnerabilities via Aquasecurity Trivy, and publishes the report to the GitHub Actions run summary.
+5. The tag creation event automatically runs Aquasecurity Trivy on Python dependencies and the local ARM64 container (`paridhi:local`), generates SPDX 2.3 JSON SBOMs, audits license compliance, detects vulnerabilities across severities, publishes the verified image to GitHub Container Registry (`ghcr.io`), and publishes the security, SBOM, and license report to the GitHub Actions run summary.
 
 ---
 

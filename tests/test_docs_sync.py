@@ -118,7 +118,8 @@ def test_github_workflows_configuration() -> None:
     assert "workflow_dispatch:" in ci_content
     assert "pull_request:" not in ci_content
 
-    # Docker publish checks (strictly tags, not main, arm64 only, local image Trivy & SBOM)
+    # Docker publish checks (strictly tags, not main, arm64 only,
+    # Trivy Python & Docker Vuln/SBOM/Licenses)
     assert "tags:" in docker_content
     assert "branches:" not in docker_content
     assert "platforms: linux/arm64" in docker_content
@@ -126,6 +127,11 @@ def test_github_workflows_configuration() -> None:
     assert "paridhi:local" in docker_content
     assert "aquasecurity/trivy-action@master" in docker_content
     assert "spdx-json" in docker_content
+    assert "sbom-python.spdx.json" in docker_content
+    assert "sbom-docker.spdx.json" in docker_content
+    assert "scanners: 'license'" in docker_content
+    assert "trivy-python-license.txt" in docker_content
+    assert "trivy-docker-license.txt" in docker_content
     assert "GITHUB_STEP_SUMMARY" in docker_content
     assert "PARIDHI_SERVER_VERSION" in PROJECT_ROOT.joinpath("Dockerfile").read_text(
         encoding="utf-8"
