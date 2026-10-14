@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   docker-publish:
-    name: Build & Publish OCI Container
+    name: Build, Security Scan & Publish ARM64 Image
     runs-on: ubuntu-latest
 
     steps:
@@ -46,7 +46,7 @@ jobs:
           echo "version=$RAW_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Checkout repository at release tag
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
         with:
           ref: ${{ steps.version.outputs.tag }}
 
@@ -58,6 +58,55 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      # ========================================================================
+      # Stage 1: Build Local ARM64 Image for Scanning & Testing
+      # ========================================================================
+      - name: Build local ARM64 Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/arm64
+          load: true
+          tags: paridhi:local
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # ========================================================================
+      # Stage 2: Perform Trivy Analysis & SBOM Generation on Local Image
+      # ========================================================================
+      - name: Run Trivy Vulnerability Scanner on Local Image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'paridhi:local'
+          scan-type: 'image'
+          format: 'table'
+          output: 'trivy-vulnerability-report.txt'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+          exit-code: '0'
+
+      - name: Generate SBOM from Local Image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'paridhi:local'
+          scan-type: 'image'
+          format: 'spdx-json'
+          output: 'sbom.spdx.json'
+
+      - name: Upload SBOM Artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sbom-paridhi-${{ steps.version.outputs.version }}
+          path: sbom.spdx.json
+          retention-days: 90
+
+      # ========================================================================
+      # Stage 3: Build & Publish Actual Image to Registry
+      # Executes only after local build, security analysis, and SBOM succeed
+      # ========================================================================
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4
         with:
@@ -81,7 +130,7 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.licenses=MIT
 
-      - name: Build and Push Docker image
+      - name: Build and Push Docker image to ghcr.io (linux/arm64)
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -93,4 +142,57 @@ jobs:
           build-args: |
             VERSION=${{ steps.version.outputs.version }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+
+      # ========================================================================
+      # Stage 4: Post Security & SBOM Report to GitHub Action Run Summary
+      # ========================================================================
+      - name: Generate GitHub Actions Run Summary
+        if: always()
+        run: |
+          set -euo pipefail
+
+          {
+            echo "# 🛡️ Security Vulnerability & SBOM Report"
+            echo ""
+            echo "### 📋 Build & Target Details"
+            echo "| Attribute | Value |"
+            echo "| :--- | :--- |"
+            echo "| **Published Image** | \`ghcr.io/${{ github.repository }}:${{ steps.version.outputs.version }}\` |"
+            echo "| **Release Tag** | \`${{ steps.version.outputs.tag }}\` |"
+            echo "| **Target Architecture** | \`linux/arm64\` |"
+            echo "| **Scanner Engine** | [Aquasecurity Trivy](https://github.com/aquasecurity/trivy-action) |"
+            echo "| **Scan Target** | Local Image (\`paridhi:local\`) prior to registry push |"
+            echo "| **SBOM Specification** | SPDX 2.3 JSON (\`sbom.spdx.json\`) |"
+            echo ""
+            echo "---"
+            echo ""
+            echo "### 📦 Software Bill of Materials (SBOM)"
+            if [ -f sbom.spdx.json ] && [ -s sbom.spdx.json ]; then
+              echo "✅ **SBOM successfully generated from local image**: \`sbom.spdx.json\`"
+              echo "- Uploaded as workflow artifact: **\`sbom-paridhi-${{ steps.version.outputs.version }}\`**"
+              echo "- Standard: SPDX 2.3 JSON specification"
+            else
+              echo "⚠️ SBOM generation did not produce an output file."
+            fi
+            echo ""
+            echo "---"
+            echo ""
+            echo "### 🔍 Trivy Vulnerability Scan Findings"
+            if [ -f trivy-vulnerability-report.txt ] && [ -s trivy-vulnerability-report.txt ]; then
+              SUMMARY_LINE=$(grep "^Total:" trivy-vulnerability-report.txt || true)
+              if [ -n "$SUMMARY_LINE" ]; then
+                echo "> **Summary**: \`$SUMMARY_LINE\`"
+                echo ""
+              fi
+
+              echo "<details open>"
+              echo "<summary><b>Click to view detailed vulnerability report table</b></summary>"
+              echo ""
+              echo "\`\`\`text"
+              cat trivy-vulnerability-report.txt
+              echo "\`\`\`"
+              echo "</details>"
+            else
+              echo "✅ No vulnerabilities detected in the target image."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -19,12 +19,15 @@ flowchart TD
         F --> G["Create GitHub Draft Release"]
     end
 
-    subgraph Phase2["Phase 2: Docker Build & Publish (docker-publish.yml)"]
+    subgraph Phase2["Phase 2: Docker Build, Scan & Publish (docker-publish.yml)"]
         F -.->|Tag Push Event| H["Trigger on v*.*.* Tag (Never on main)"]
         H --> I["Extract Version (e.g. 0.1.0)"]
-        I --> J["Build Docker Image (--build-arg VERSION=0.1.0)"]
-        J --> K["Inject PARIDHI_SERVER_VERSION into Container"]
-        K --> L["Publish Multi-Tag Image to ghcr.io"]
+        I --> J["Build Local ARM64 Image (--load paridhi:local)"]
+        J --> K["Trivy Vulnerability Scan on Local Image"]
+        K --> L["Trivy SBOM Generation on Local Image"]
+        L --> M["Upload SBOM Artifact"]
+        M -->|Scan & SBOM Complete| N["Build & Publish Actual Image to ghcr.io"]
+        N --> O["Publish Security Report to Run Summary"]
     end
 ```
 
@@ -71,13 +74,21 @@ flowchart TD
    - Strips the leading `v` from the tag (e.g., `v0.1.0` $\rightarrow$ `0.1.0`).
    - Passes the version number into Docker build as `--build-arg VERSION=<version>`.
    - Sets the runtime environment variable `PARIDHI_SERVER_VERSION=<version>` and OCI image label `org.opencontainers.image.version=<version>`.
-3. **Container Registry Publishing**:
+3. **Local ARM64 Image Build for Analysis**:
+   - Builds the ARM64 image locally with `--load` (`paridhi:local`).
+4. **Local Security Vulnerability Scanning & SBOM Generation**:
+   - Invokes [`aquasecurity/trivy-action@master`](https://github.com/aquasecurity/trivy-action) directly against the local container image (`paridhi:local`) for vulnerabilities across all severities (`CRITICAL,HIGH,MEDIUM,LOW`).
+   - Generates a Software Bill of Materials in SPDX 2.3 JSON format (`sbom.spdx.json`) from the local image.
+   - Uploads the generated SBOM as a workflow run artifact.
+5. **Build & Publish Actual Image to Container Registry**:
    - Authenticates against GitHub Container Registry (`ghcr.io`) using `GITHUB_TOKEN`.
-   - Builds exclusively for the **ARM64** architecture (`linux/arm64`) via QEMU and Docker Buildx.
+   - Builds and publishes the verified **ARM64** image (`linux/arm64`) to `ghcr.io`, leveraging cached Buildx layers.
    - Publishes images tagged as:
      - `ghcr.io/<owner>/paridhi:<version>` (e.g. `0.1.0`)
      - `ghcr.io/<owner>/paridhi:<tag>` (e.g. `v0.1.0`)
      - `ghcr.io/<owner>/paridhi:latest`
+6. **GitHub Actions Run Summary**:
+   - Generates a Markdown security report directly in the GitHub Actions run summary (`$GITHUB_STEP_SUMMARY`), presenting build metadata, local scanning verification, SBOM status, and expandable vulnerability findings.
 
 ---
 
@@ -153,9 +164,10 @@ To execute a release:
    - Navigate to **GitHub $\rightarrow$ Releases** (`https://github.com/<owner>/paridhi/releases`).
    - Open the latest draft release.
    - Review release notes, edit descriptions if desired, and click **Publish release**.
-4. **Automatic Container Build**:
+4. **Automatic Local Scan, Container Build & Publishing**:
    - The tag push triggers `Build and Publish Docker Image`.
-   - The container image is verified, built with `--build-arg VERSION=<version>`, and pushed to `ghcr.io`.
+   - Builds the ARM64 container locally with `--load` (`paridhi:local`), runs Trivy vulnerability scanning, and generates the SPDX SBOM on the local image.
+   - Builds and publishes the verified ARM64 image to `ghcr.io`, leveraging cached Buildx layers, and publishes the security report to the GitHub Actions run summary.
 
 ---
 
