@@ -73,7 +73,8 @@ flowchart TD
    - Sets the runtime environment variable `PARIDHI_SERVER_VERSION=<version>` and OCI image label `org.opencontainers.image.version=<version>`.
 3. **Container Registry Publishing**:
    - Authenticates against GitHub Container Registry (`ghcr.io`) using `GITHUB_TOKEN`.
-   - Publishes multi-platform images tagged as:
+   - Builds exclusively for the **ARM64** architecture (`linux/arm64`) via QEMU and Docker Buildx.
+   - Publishes images tagged as:
      - `ghcr.io/<owner>/paridhi:<version>` (e.g. `0.1.0`)
      - `ghcr.io/<owner>/paridhi:<tag>` (e.g. `v0.1.0`)
      - `ghcr.io/<owner>/paridhi:latest`
