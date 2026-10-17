@@ -15,6 +15,7 @@
 4. **Resilience over Failure**: Upstream errors (quota, 404, network timeouts, auth errors) are captured into typed domain exceptions and presented gracefully to MCP clients without exposing stack traces.
 5. **Strict Type Safety**: Full strict typing verified with `mypy --strict` and modern Python 3.11+ constructs.
 6. **`uv` as Single Source of Truth**: All environment provisioning, dependency locking, and test runs use `uv`.
+7. **Permissive Open-Source Licensing**: The codebase is strictly and uniformly licensed under the MIT License (`LICENSE`, `pyproject.toml`, `README.md`, and OCI container metadata).
 
 ---
 
@@ -43,6 +44,7 @@
 paridhi/
 ├── .dockerignore                               # Files excluded from Docker container builds
 ├── .env.example                                # Template for configuration & API keys
+├── .python-version                             # Python runtime pinned (3.14)
 ├── Dockerfile                                  # Production multi-stage OCI container image definition
 ├── pyproject.toml                              # Packaging, dependencies, and tool settings
 ├── uv.lock                                     # Deterministic lockfile managed by uv

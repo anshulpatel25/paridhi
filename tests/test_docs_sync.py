@@ -84,17 +84,33 @@ def test_documentation_sync_policy_documented() -> None:
 
 
 def test_license_and_release_documentation_exist() -> None:
-    """Ensure LICENSE and RELEASE.md exist and contain required content."""
+    """Ensure LICENSE, RELEASE.md, pyproject.toml, and documentation
+    have consistent MIT licensing.
+    """
     license_path = PROJECT_ROOT / "LICENSE"
     release_path = PROJECT_ROOT / "RELEASE.md"
+    pyproject_path = PROJECT_ROOT / "pyproject.toml"
+    docker_workflow = PROJECT_ROOT / ".github" / "workflows" / "docker-publish.yml"
 
     assert license_path.exists(), f"Missing {license_path}"
     assert release_path.exists(), f"Missing {release_path}"
+    assert pyproject_path.exists(), f"Missing {pyproject_path}"
+    assert docker_workflow.exists(), f"Missing {docker_workflow}"
 
     license_text = license_path.read_text(encoding="utf-8")
     release_text = release_path.read_text(encoding="utf-8")
+    readme_text = README_PATH.read_text(encoding="utf-8")
+    agents_text = AGENTS_PATH.read_text(encoding="utf-8")
+    pyproject_text = pyproject_path.read_text(encoding="utf-8")
+    docker_text = docker_workflow.read_text(encoding="utf-8")
 
     assert "MIT License" in license_text
+    assert 'license = "MIT"' in pyproject_text
+    assert 'license-files = ["LICENSE"]' in pyproject_text
+    assert "MIT License" in readme_text
+    assert "[MIT License](./LICENSE)" in readme_text or "[MIT](./LICENSE)" in readme_text
+    assert "MIT License definition" in agents_text
+    assert "org.opencontainers.image.licenses=MIT" in docker_text
     assert "0.1.0" in release_text
     assert "ghcr.io" in release_text
 
@@ -133,6 +149,12 @@ def test_github_workflows_configuration() -> None:
     assert "trivy-python-license.txt" in docker_content
     assert "trivy-docker-license.txt" in docker_content
     assert "GITHUB_STEP_SUMMARY" in docker_content
-    assert "PARIDHI_SERVER_VERSION" in PROJECT_ROOT.joinpath("Dockerfile").read_text(
-        encoding="utf-8"
-    )
+    dockerfile_text = PROJECT_ROOT.joinpath("Dockerfile").read_text(encoding="utf-8")
+    py_ver_file = PROJECT_ROOT.joinpath(".python-version")
+    python_version_text = py_ver_file.read_text(encoding="utf-8").strip()
+
+    assert "PARIDHI_SERVER_VERSION" in dockerfile_text
+    assert python_version_text == "3.14"
+    assert "python:3.14-slim-bookworm" in dockerfile_text
+    assert "Python runtime pinned (3.14)" in README_PATH.read_text(encoding="utf-8")
+    assert "Python runtime pinned (3.14)" in AGENTS_PATH.read_text(encoding="utf-8")

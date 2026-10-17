@@ -173,7 +173,7 @@ paridhi/
 ├── .dockerignore                               # Files excluded from Docker container builds
 ├── .env.example                                # Environment configuration template
 ├── .gitignore                                  # Git ignore rules
-├── .python-version                             # Python runtime pinned (3.12)
+├── .python-version                             # Python runtime pinned (3.14)
 ├── Dockerfile                                  # Production multi-stage OCI container image definition
 ├── pyproject.toml                              # Dependencies, packaging & tool configs
 ├── uv.lock                                     # Deterministic dependency lockfile
@@ -431,4 +431,4 @@ uv run mypy src tests
 
 ## License
 
-[MIT](./LICENSE)
+This project is licensed under the [MIT License](./LICENSE) - see the [LICENSE](./LICENSE) file for details.
