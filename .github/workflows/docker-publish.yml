@@ -160,7 +160,7 @@ jobs:
           exit-code: '0'
 
       - name: Upload Security, SBOM & License Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: security-and-sbom-paridhi-${{ steps.version.outputs.version }}
