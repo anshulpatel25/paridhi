@@ -24,7 +24,7 @@
 
 ## Architecture & Ports & Adapters Design
 
-Paridhi is designed around **Clean Architecture / Ports & Adapters (Hexagonal)**:
+Paridhi is designed around **Clean Architecture / Ports & Adapters (Hexagonal)**. For detailed architecture choices, critical user journeys, and invariants, see the [EGM System Design Document](./docs/design_doc.md):
 
 ```mermaid
 graph TD
@@ -53,6 +53,32 @@ graph TD
         GoogleAdapter --> PlacesAPI["Google Places API (New)"]
     end
 ```
+
+---
+
+## Subdirectories & System Boundaries
+
+- [src](./src/README.md): Primary codebase directory organizing core configuration, domain contracts, infrastructure adapters, and FastMCP presentation endpoints.
+  - [paridhi](./src/paridhi/README.md): Hexagonal application root package and CLI dispatcher.
+    - [core](./src/paridhi/core/README.md): Environment settings, runtime configuration, and cached settings singleton.
+    - [domain](./src/paridhi/domain/README.md): Domain models, spatial bounds clamping, exceptions, and `SpatialProvider` port protocol.
+    - [infrastructure](./src/paridhi/infrastructure/README.md): Provider factory and adapter implementations.
+      - [google](./src/paridhi/infrastructure/google/README.md): Google Geocoding and Places API (New) adapter with Haversine distance filtering and field masks.
+    - [presentation](./src/paridhi/presentation/README.md): FastMCP server, tool endpoints (`ping`, `discover_pois`), and error boundary handling.
+
+## Global Invariants
+
+- **Spatial Boundary Clamping**: All spatial radii are strictly bounded to `[100m, 50,000m]` at the domain boundary (`src/paridhi/domain/models.py:clamp_radius`).
+- **Decoupled Architecture**: Domain and Presentation layers depend solely on the abstract `SpatialProvider` protocol, never on concrete provider adapters (`src/paridhi/domain/ports.py:SpatialProvider`).
+- **Safe Error Boundaries**: Unhandled domain and network provider exceptions are trapped in `src/paridhi/presentation/server.py` and converted to user-facing Markdown notices rather than bubbling raw stack traces to MCP clients.
+- **Billing Optimization**: Places API requests strictly enforce `PLACES_FIELD_MASK` to retrieve only required fields.
+- **Continuous Documentation Synchronization**: `README.md` and `AGENTS.md` must remain strictly synchronized with all FastMCP tool definitions and parameter signatures (`tests/test_docs_sync.py`).
+
+## Global Side Effects
+
+- **Outbound HTTP / External Services**: In production, network requests are made asynchronously to Google Geocoding API (`maps.googleapis.com`) and Google Places API (New) (`places.googleapis.com`).
+- **Standard Streams**: FastMCP stdio transport binds to process standard I/O; logging is directed to `sys.stderr`.
+- **Network Listening**: HTTP, Streamable HTTP, or SSE transports bind local TCP sockets on configured host/port (`127.0.0.1:8000` by default).
 
 ---
 
@@ -411,21 +437,13 @@ Discovers and enriches points of interest (POIs) within circular spatial bounds 
 
 ---
 
-## Testing & Quality Control
+## System Verification
 
 Execute all verification checks locally via `uv`:
 
-```bash
-# Run pytest test suite (including docs synchronization test)
-uv run pytest
-
-# Check code formatting & linting
-uv run ruff check .
-uv run ruff format --check .
-
-# Strict type analysis
-uv run mypy src tests
-```
+- Run test suite: `uv run pytest`
+- Check code formatting & linting: `uv run ruff check . && uv run ruff format --check .`
+- Strict type analysis: `uv run mypy src tests`
 
 ---
 

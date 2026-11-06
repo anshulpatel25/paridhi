@@ -52,6 +52,8 @@ paridhi/
 ├── RELEASE.md                                  # Release lifecycle & CI/CD deployment guide
 ├── README.md                                   # User documentation with GitHub-rendered Mermaid diagrams
 ├── AGENTS.md                                   # Agent operational specification (this file)
+├── docs/
+│   └── design_doc.md                           # EGM System Design Document & architecture specification
 ├── src/
 │   └── paridhi/
 │       ├── __init__.py                         # Package exports and __version__
