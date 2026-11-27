@@ -199,7 +199,7 @@ paridhi/
 ├── .dockerignore                               # Files excluded from Docker container builds
 ├── .env.example                                # Environment configuration template
 ├── .gitignore                                  # Git ignore rules
-├── .python-version                             # Python runtime pinned (3.14)
+├── .python-version                             # Python runtime pinned (3.15)
 ├── Dockerfile                                  # Production multi-stage OCI container image definition
 ├── pyproject.toml                              # Dependencies, packaging & tool configs
 ├── uv.lock                                     # Deterministic dependency lockfile
