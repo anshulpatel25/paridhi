@@ -44,7 +44,7 @@
 paridhi/
 ├── .dockerignore                               # Files excluded from Docker container builds
 ├── .env.example                                # Template for configuration & API keys
-├── .python-version                             # Python runtime pinned (3.14)
+├── .python-version                             # Python runtime pinned (3.15)
 ├── Dockerfile                                  # Production multi-stage OCI container image definition
 ├── pyproject.toml                              # Packaging, dependencies, and tool settings
 ├── uv.lock                                     # Deterministic lockfile managed by uv

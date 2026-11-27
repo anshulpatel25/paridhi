@@ -154,7 +154,7 @@ def test_github_workflows_configuration() -> None:
     python_version_text = py_ver_file.read_text(encoding="utf-8").strip()
 
     assert "PARIDHI_SERVER_VERSION" in dockerfile_text
-    assert python_version_text == "3.14"
-    assert "python:3.14-slim-bookworm" in dockerfile_text
-    assert "Python runtime pinned (3.14)" in README_PATH.read_text(encoding="utf-8")
-    assert "Python runtime pinned (3.14)" in AGENTS_PATH.read_text(encoding="utf-8")
+    assert python_version_text == "3.15"
+    assert "python:3.15-slim-bookworm" in dockerfile_text
+    assert "Python runtime pinned (3.15)" in README_PATH.read_text(encoding="utf-8")
+    assert "Python runtime pinned (3.15)" in AGENTS_PATH.read_text(encoding="utf-8")
